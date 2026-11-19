@@ -13,11 +13,13 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Python 3.9 has no setup-python build for Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.9", "3.10"]
     steps:
