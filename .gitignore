@@ -238,8 +238,10 @@ pyrightconfig.json
 
 .env
 /data
-./test.py
-./test.ipynb
 tests/data/*
 cache
 # End of https://www.toptal.com/developers/gitignore/api/macos,visualstudiocode,python,osx
+*_PLAN.md
+log/
+notebooks/
+*.ipynb

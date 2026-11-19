@@ -4,17 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geo_mapper_api"
-version = "0.1.2"
+version = "0.2.0"
 description = "A simple API for matching geospatial data to OSM IDs"
 authors = [{ name="JP Talusan", email="jptalusan@gmail.com" }]
 readme = "README.md"
-requires-python = ">=3.9"
-dependencies = ["pandas<=1.4.4", 
+requires-python = ">=3.9,<3.11"
+dependencies = ["pandas<=1.4.4",
                 "geopandas<=0.12.2",
-                "numpy>=1.22.4",
-                "osmnx>=1.9.4",
-                "fiona==1.9.6",
-                "pytest"]
+                "numpy>=1.22.4,<2",
+                "osmnx>=1.9.4,<2",
+                "fiona==1.9.6"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -24,3 +23,8 @@ Homepage = "https://github.com/scope-lab-vu/geospatial_mapper"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+log_file = "log/pytest.log"
+log_file_level = "DEBUG"
