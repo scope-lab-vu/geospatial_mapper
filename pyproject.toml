@@ -20,7 +20,7 @@ dependencies = ["pandas<=1.4.4",
 dev = ["pytest"]
 
 [project.urls]
-Homepage = "https://github.com/jptalusan/geospatial_mapper"
+Homepage = "https://github.com/scope-lab-vu/geospatial_mapper"
 
 [tool.setuptools.packages.find]
 where = ["src"]
