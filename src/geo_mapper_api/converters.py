@@ -50,9 +50,9 @@ def _require_columns(df, required, path):
 def _to_int_ids(series, path, column):
     """Parse IDs as int64, or raise naming the file, the column and up to five bad values."""
     out = pd.to_numeric(series, errors="coerce")
-    bad = series[out.isna()]
+    bad = series[out.isna() | (out != out.round())]
     if not bad.empty:
-        raise ValueError(f"{path}: {column} has missing or non-numeric values: {bad.head(5).tolist()}")
+        raise ValueError(f"{path}: {column} has missing or non-integer values: {bad.head(5).tolist()}")
     return out.astype("int64")
 
 
@@ -63,6 +63,8 @@ def load_and_prepare_inrix_data_for_multiple_counties(geojson_path, county_names
     """
     inrix_df = gpd.read_file(geojson_path, engine="fiona")
     _require_columns(inrix_df, INRIX_REQUIRED, geojson_path)
+    if inrix_df.crs is None or inrix_df.crs.to_epsg() != 4326:
+        raise ValueError(f"{geojson_path}: geometries must be in EPSG:4326, got {inrix_df.crs}")
     inrix_df.replace(to_replace='', value=np.nan, inplace=True)
     filtered_df = inrix_df.loc[inrix_df["County"].isin(county_names)].copy()
     missing = [c for c in county_names if c not in set(filtered_df["County"])]
@@ -83,17 +85,16 @@ def get_exterior_polygon(geodf):
 def get_osm_graph(polygon, custom_filter):
     """
     Get OSM road network graph for the given polygon with the custom filter.
-
+    
     Parameters:
     polygon (shapely.geometry.Polygon): The polygon defining the area of interest.
     custom_filter (str): Custom filter to apply to the OSM data.
-
+    
     Returns:
     networkx.MultiDiGraph: The road network graph for the given polygon.
     """
     G = ox.graph_from_polygon(polygon, custom_filter=custom_filter, network_type='drive')
     return G
-
 
 def classify_bearing(bearing):
     if bearing >= 337.5 or bearing < 22.5:
@@ -112,7 +113,7 @@ def classify_bearing(bearing):
         return 'W'
     elif 292.5 <= bearing < 337.5:
         return 'NW'
-
+    
 
 def calculate_bearing(point1, point2):
     lon1, lat1 = point1
@@ -127,12 +128,11 @@ def calculate_bearing(point1, point2):
     compass_bearing = (initial_bearing + 360) % 360
     return compass_bearing
 
-
 def line_bearing(line):
     point1 = (line.coords[0][0], line.coords[0][1])
     point2 = (line.coords[-1][0], line.coords[-1][1])
     return calculate_bearing(point1, point2)
-
+    
 
 def load_conflation(csv_path, xd_ids):
     """Load INRIX conflation rows for the given XDs, one row per (XD, OSM way)."""
@@ -191,12 +191,12 @@ def filter_groups_by_match(df):
 def buffer_geometries(gdf, column_name, buffer_size):
     """
     Applies a buffer to the geometries in a GeoDataFrame.
-
+    
     Parameters:
     - gdf: GeoDataFrame containing the geometries.
     - column_name: The name of the geometry column to buffer.
     - buffer_size: The buffer size to apply.
-
+    
     Returns:
     - GeoDataFrame with buffered geometries.
     """
@@ -221,17 +221,15 @@ def _fallback_overlap(group_df, buffered_osm, gdf_inrix):
     return _rows_for_xds(group_df, joined.XDSegID)
 
 
-def find_overlapping_geometries(group_df, gdf_osm, gdf_inrix, gdf_nodes):
+def find_overlapping_geometries(group_df,gdf_osm, gdf_inrix, gdf_nodes):
     """
-    Finds the XDs in one edge group that overlap the edge, first through its end nodes, then
-    through the edge line itself.
-
+    Finds overlapping geometries between OSM, INRIX, and nodes data.
+    
     Parameters:
-    - group_df: the merged rows for one (u, v, key) edge.
     - gdf_osm: GeoDataFrame containing OSM data.
     - gdf_inrix: GeoDataFrame containing INRIX data.
     - gdf_nodes: GeoDataFrame containing nodes data.
-
+    
     Returns:
     - DataFrame of overlapping geometries.
     """
@@ -254,27 +252,27 @@ def find_overlapping_geometries(group_df, gdf_osm, gdf_inrix, gdf_nodes):
 
 def process_top_groups(grouped_data, nodes):
     """
-    Finds the overlapping geometries for every (u, v, key) edge group.
-
+    Processes the top groups and finds overlapping geometries.
+    
     Parameters:
-    - grouped_data: merged rows grouped by (u, v, key).
+    - grouped_data: Grouped DataFrame containing the top groups.
     - nodes: GeoDataFrame containing nodes data.
-
+    
     Returns:
     - Concatenated DataFrame of all overlapping geometries.
     """
     all_overlapping_geometries = []
-
+    
     for group_name, group_df in grouped_data:
         gdf_osm = gpd.GeoDataFrame(group_df.drop(columns=['XDSegID', 'geometry_inrix'], axis=1), geometry='geometry')
         gdf_inrix = gpd.GeoDataFrame(group_df[['XDSegID', 'geometry_inrix']], geometry='geometry_inrix')
         gdf_inrix['geometry_inrix_copy'] = gdf_inrix['geometry_inrix']
         gdf_inrix.set_geometry('geometry_inrix_copy', inplace=True)
         gdf_nodes = gpd.GeoDataFrame(nodes[nodes.index.isin([group_name[0], group_name[1]])].reset_index(), geometry='geometry')
-
-        overlapping_geometries = find_overlapping_geometries(group_df, gdf_osm, gdf_inrix, gdf_nodes)
+        
+        overlapping_geometries = find_overlapping_geometries(group_df,gdf_osm, gdf_inrix, gdf_nodes)
         all_overlapping_geometries.append(overlapping_geometries)
-
+    
     if not all_overlapping_geometries:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
     return pd.concat(all_overlapping_geometries, ignore_index=True)

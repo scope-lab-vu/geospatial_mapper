@@ -115,6 +115,11 @@ def test_ids_non_numeric_name_file_and_values(tmp_path):
         gma.load_conflation(letters, [5])
     assert str(letters) in str(err.value) and "OSMWayIDs" in str(err.value) and "abc" in str(err.value)
 
+    fraction = write_conflation(tmp_path / "fraction.csv", [(5, "100.5", "P")])
+    with pytest.raises(ValueError) as err:
+        gma.load_conflation(fraction, [5])
+    assert str(fraction) in str(err.value) and "OSMWayIDs" in str(err.value) and "100.5" in str(err.value)
+
     geojson = write_geojson(tmp_path / "bad.geojson", [
         {"County": "DAVIDSON", "XDSegID": "x1", "Bearing": "E", "geometry": EAST_LINE},
     ])
@@ -138,6 +143,18 @@ def test_loader_missing_columns_names_file(tmp_path):
 
     assert str(geojson) in str(err.value)
     assert "Bearing" in str(err.value)
+
+
+def test_loader_rejects_non_4326_geojson(tmp_path):
+    path = tmp_path / "mercator.geojson"
+    gpd.GeoDataFrame(
+        {"County": ["DAVIDSON"], "XDSegID": [5], "Bearing": ["E"]}, geometry=[EAST_LINE], crs=4326,
+    ).to_crs(3857).to_file(path, driver="GeoJSON")
+
+    with pytest.raises(ValueError) as err:
+        gma.load_and_prepare_inrix_data_for_multiple_counties(path, ["DAVIDSON"])
+
+    assert str(path) in str(err.value) and "EPSG:4326" in str(err.value)
 
 
 def test_normalize_counties_lowercase_and_duplicates():

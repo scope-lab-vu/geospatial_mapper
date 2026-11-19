@@ -87,13 +87,16 @@ The result has one row per OSM edge and XD segment pair:
 - `county` holds the upper-cased county name.
 
 # Errors
-- Bad inputs raise `ValueError` before any county is processed. This covers a missing column, an unknown county, an empty county list, a non-numeric ID, and a conflation row whose way and direction lists differ in length. The message names the file, the column and the offending values.
+- Bad inputs raise `ValueError` before any county is processed. This covers a missing column, an unknown county, an empty county list, a missing or non-integer ID, geometries not in EPSG:4326, and a conflation row whose way and direction lists differ in length. The message names the file, the column and the offending values.
 - A failure while processing a county raises `RuntimeError` with a message like `county 'DAVIDSON' failed: ConnectionError: ...`.
 
 # Logging
 The package logs through Python's `logging` module and writes no files itself. To keep its logs:
 ```python
 import logging
+import os
+
+os.makedirs("log", exist_ok=True)
 logging.basicConfig(filename="log/geo_mapper.log", level=logging.DEBUG)
 ```
 
