@@ -52,6 +52,7 @@ def test_every_pair_is_in_the_conflation(result):
     conflation = pd.read_csv(CSV, dtype={"OSMWayIDs": str})
     allowed = {(int(way), int(xd))
                for xd, ways in zip(conflation["XDSegID"], conflation["OSMWayIDs"])
+               if isinstance(ways, str)
                for way in ways.split(";")}
     pairs = set(zip(result["osmid"].astype(int), result["XDSegID"].astype(int)))
     assert pairs <= allowed, sorted(pairs - allowed)[:5]

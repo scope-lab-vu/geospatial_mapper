@@ -1,11 +1,10 @@
-import logging
-import math
-import warnings
-
+import pandas as pd
 import geopandas as gpd
 import numpy as np
 import osmnx as ox
-import pandas as pd
+import math
+import warnings
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,7 @@ def _require_columns(df, required, path):
 def _to_int_ids(series, path, column):
     """Parse IDs as int64, or raise naming the file, the column and up to five bad values."""
     out = pd.to_numeric(series, errors="coerce")
-    bad = series[out.isna() | (out != out.round())]
+    bad = series[~np.isfinite(out) | (out != out.round())]
     if not bad.empty:
         raise ValueError(f"{path}: {column} has missing or non-integer values: {bad.head(5).tolist()}")
     return out.astype("int64")

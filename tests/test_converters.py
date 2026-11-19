@@ -115,10 +115,11 @@ def test_ids_non_numeric_name_file_and_values(tmp_path):
         gma.load_conflation(letters, [5])
     assert str(letters) in str(err.value) and "OSMWayIDs" in str(err.value) and "abc" in str(err.value)
 
-    fraction = write_conflation(tmp_path / "fraction.csv", [(5, "100.5", "P")])
-    with pytest.raises(ValueError) as err:
-        gma.load_conflation(fraction, [5])
-    assert str(fraction) in str(err.value) and "OSMWayIDs" in str(err.value) and "100.5" in str(err.value)
+    for value in ("100.5", "inf"):
+        path = write_conflation(tmp_path / "numbers.csv", [(5, value, "P")])
+        with pytest.raises(ValueError) as err:
+            gma.load_conflation(path, [5])
+        assert str(path) in str(err.value) and "OSMWayIDs" in str(err.value) and value in str(err.value)
 
     geojson = write_geojson(tmp_path / "bad.geojson", [
         {"County": "DAVIDSON", "XDSegID": "x1", "Bearing": "E", "geometry": EAST_LINE},
