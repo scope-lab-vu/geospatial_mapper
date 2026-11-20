@@ -1,3 +1,4 @@
+import warnings
 from types import SimpleNamespace
 
 import geopandas as gpd
@@ -68,10 +69,13 @@ def _tiny_graph():
 
 @pytest.fixture(autouse=True)
 def strict_chained_assignment():
-    previous = pd.options.mode.chained_assignment
-    pd.options.mode.chained_assignment = "raise"
-    yield
-    pd.options.mode.chained_assignment = previous
+    """Fail any test whose code assigns through a chained or copied DataFrame selection."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pd.errors.ChainedAssignmentError)
+        setting_with_copy = getattr(pd.errors, "SettingWithCopyWarning", None)  # removed in pandas 3
+        if setting_with_copy is not None:
+            warnings.simplefilter("error", setting_with_copy)
+        yield
 
 
 @pytest.fixture
