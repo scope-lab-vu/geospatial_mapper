@@ -1,3 +1,25 @@
+# Quick start
+Match INRIX XD segments to OpenStreetMap (OSM) road edges in four steps.
+
+1. **Install** (Python 3.11 or later):
+   ```
+   pip install geo_mapper_api
+   ```
+2. **Get two files** for your state from the INRIX [Data Download Service](https://docs.inrix.com/datadownload/datadownload/):
+   - the map release **GeoJSON** of XD segments, for example `USA_Tennessee.geojson`;
+   - the **OSM conflation CSV**, which lists the OSM ways under each XD, for example `USA_Tennessee.csv`.
+3. **Run it** for one or more counties:
+   ```python
+   from geo_mapper_api import inrix_to_osm
+
+   df = inrix_to_osm.serial("USA_Tennessee.geojson", "USA_Tennessee.csv", ["DAVIDSON"])
+   df.to_csv("davidson_inrix_osm.csv", index=False)
+   ```
+   The first run downloads the county's road network from OSM, which can take a few minutes.
+4. **Read the result**: one row per XD and OSM edge it runs along. `XDSegID` is the INRIX segment; `u`, `v` and `key` identify the OSM edge; `osmid` is the OSM way. See [Usage](#usage) below for every column.
+
+The sections below describe the input fields, the settings and how a match is decided.
+
 # Setup
 This needs Python 3.11 or later. It uses osmnx 2, geopandas 1 and pandas 2.1 or later.
 ```
