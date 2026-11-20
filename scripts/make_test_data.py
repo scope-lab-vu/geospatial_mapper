@@ -55,7 +55,7 @@ def main():
     geojson = fetch(args.geojson_src, raw_dir)
     csv = fetch(args.csv_src, raw_dir)
 
-    segments = gpd.read_file(geojson, engine="fiona")
+    segments = gpd.read_file(geojson)
     subset = segments[(segments["County"] == COUNTY) & segments.geometry.within(DOWNTOWN)]
     if subset.empty:
         sys.exit(f"no {COUNTY} XD segments inside {DOWNTOWN.bounds} in {geojson}")

@@ -60,7 +60,7 @@ def load_and_prepare_inrix_data_for_multiple_counties(geojson_path, county_names
 
     county_names must already be normalised by normalize_counties.
     """
-    inrix_df = gpd.read_file(geojson_path, engine="fiona")
+    inrix_df = gpd.read_file(geojson_path)
     _require_columns(inrix_df, INRIX_REQUIRED, geojson_path)
     if inrix_df.crs is None or inrix_df.crs.to_epsg() != 4326:
         raise ValueError(f"{geojson_path}: geometries must be in EPSG:4326, got {inrix_df.crs}")
@@ -77,7 +77,7 @@ def load_and_prepare_inrix_data_for_multiple_counties(geojson_path, county_names
 def get_exterior_polygon(geodf):
     """Return the convex hull of the geometries, grown by HULL_BUFFER_M meters, in EPSG:4326."""
     utm = geodf.estimate_utm_crs()
-    hull = geodf.to_crs(utm).unary_union.convex_hull.buffer(HULL_BUFFER_M)
+    hull = geodf.to_crs(utm).union_all().convex_hull.buffer(HULL_BUFFER_M)
     return gpd.GeoSeries([hull], crs=utm).to_crs(4326).iloc[0]
 
 
@@ -135,7 +135,7 @@ def line_bearing(line):
 
 def load_conflation(csv_path, xd_ids):
     """Load INRIX conflation rows for the given XDs, one row per (XD, OSM way)."""
-    conflation = pd.read_csv(csv_path, dtype={"OSMWayIDs": str, "OSMWayDirections": str})
+    conflation = pd.read_csv(csv_path, dtype={"OSMWayIDs": "string", "OSMWayDirections": "string"})
     _require_columns(conflation, CONFLATION_REQUIRED, csv_path)
     conflation["XDSegID"] = _to_int_ids(conflation["XDSegID"], csv_path, "XDSegID")
     conflation = conflation.loc[conflation["XDSegID"].isin(xd_ids), CONFLATION_REQUIRED].copy()
@@ -147,7 +147,10 @@ def load_conflation(csv_path, xd_ids):
 
     conflation["OSMWayIDs"] = conflation["OSMWayIDs"].str.split(";")
     conflation["OSMWayDirections"] = conflation["OSMWayDirections"].str.split(";")
-    mismatch = conflation["OSMWayIDs"].str.len() != conflation["OSMWayDirections"].str.len()
+    # A missing direction gives <NA> lengths, which count as a mismatch.
+    id_counts = conflation["OSMWayIDs"].str.len().astype("Int64")
+    direction_counts = conflation["OSMWayDirections"].str.len().astype("Int64")
+    mismatch = id_counts.ne(direction_counts).fillna(True).astype(bool)
     if mismatch.any():
         ids = conflation.loc[mismatch, "XDSegID"].head(5).tolist()
         raise ValueError(f"{csv_path}: OSMWayIDs and OSMWayDirections differ in length for XDSegID {ids}")
@@ -263,7 +266,7 @@ def process_top_groups(grouped_data, nodes):
     all_overlapping_geometries = []
     
     for group_name, group_df in grouped_data:
-        gdf_osm = gpd.GeoDataFrame(group_df.drop(columns=['XDSegID', 'geometry_inrix'], axis=1), geometry='geometry')
+        gdf_osm = gpd.GeoDataFrame(group_df.drop(columns=['XDSegID', 'geometry_inrix']), geometry='geometry')
         gdf_inrix = gpd.GeoDataFrame(group_df[['XDSegID', 'geometry_inrix']], geometry='geometry_inrix')
         gdf_inrix['geometry_inrix_copy'] = gdf_inrix['geometry_inrix']
         gdf_inrix.set_geometry('geometry_inrix_copy', inplace=True)

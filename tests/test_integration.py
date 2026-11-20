@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(scope="module")
 def result():
-    # osmnx internals run here; the strict chained-assignment setting in conftest is for this package's code.
-    with pytest.MonkeyPatch.context() as mp, pd.option_context("mode.chained_assignment", "warn"):
+    with pytest.MonkeyPatch.context() as mp:
         mp.setattr(ox.settings, "use_cache", True)
         mp.setattr(ox.settings, "cache_folder", str(DATA / "osm_cache"))
         yield i2o.serial(GEOJSON, CSV, "DAVIDSON", 25)
@@ -61,7 +60,7 @@ def test_every_pair_is_in_the_conflation(result):
 def test_distances_and_area(result, segments):
     assert (result["distance"] <= 25).all()
     utm = segments.estimate_utm_crs()
-    area = gpd.GeoSeries([segments.to_crs(utm).unary_union.convex_hull.buffer(500)], crs=utm).to_crs(4326).iloc[0]
+    area = gpd.GeoSeries([segments.to_crs(utm).union_all().convex_hull.buffer(500)], crs=utm).to_crs(4326).iloc[0]
     outside = [g for g in result["osm_geom"] if not area.contains(g)]
     assert not outside, outside[:3]
 

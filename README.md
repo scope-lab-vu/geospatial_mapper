@@ -1,5 +1,5 @@
 # Setup
-This needs Python 3.9 or 3.10, because it pins older pandas and geopandas releases. Version 0.2.0 does not support Python 3.11 or later.
+This needs Python 3.11 or later. It uses osmnx 2, geopandas 1 and pandas 2.1 or later.
 ```
 pip install geo_mapper_api
 ```
@@ -102,7 +102,7 @@ logging.basicConfig(filename="log/geo_mapper.log", level=logging.DEBUG)
 
 # Development
 ```
-python3.10 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
 ```
@@ -114,6 +114,8 @@ The integration test runs on real INRIX data for downtown Nashville. The data is
 GEO_MAPPER_TEST_DATA=tests/data .venv/bin/pytest
 ```
 The first run downloads the OSM network into `tests/data/osm_cache`. Later runs reuse it.
+
+To compare this version's output with an earlier commit on the same data, run `scripts/compare_versions.py --base <commit> --base-python <a Python with that commit's dependencies>`. It prints a table per area and saves it under `log/`.
 
 # Releasing
 Set the new `version` in `pyproject.toml`, merge it to `main`, then push a matching tag such as `git tag v0.2.0 && git push origin v0.2.0`. The publish workflow checks that the tag matches the version and uploads to PyPI.
