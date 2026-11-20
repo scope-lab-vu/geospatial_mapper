@@ -20,6 +20,18 @@ Match INRIX XD segments to OpenStreetMap (OSM) road edges in four steps.
 
 The sections below describe the input fields, the settings and how a match is decided.
 
+# Examples
+Matches on downtown Nashville. The light-blue band is an INRIX XD, its arrow showing the direction of travel; purple is the OSM edge the package matched to it. Grey lines are the other OSM roads nearby.
+
+| | |
+|---|---|
+| ![A street crossing over an interstate: only the street is matched](docs/images/match_bridge_street.png) | ![The interstate under that street: only the interstate is matched](docs/images/match_bridge_interstate.png) |
+| A street over an interstate is matched only to the street, not to the interstate lanes below. | The interstate under it is matched only to the interstate, not to the street crossing over. |
+| ![A cloverleaf exit ramp matched along its whole curve](docs/images/match_cloverleaf_ramp.png) | ![A short XD on a roundabout matched to the roundabout edge in its direction](docs/images/match_roundabout.png) |
+| A cloverleaf ramp is matched along its curve, not to the road it leaves. | A short XD on a roundabout is matched to the roundabout edge running its way. |
+
+Each OSM edge runs between two intersections, so an edge can extend past the end of the XD it is matched to, as on the ramp above.
+
 # Setup
 This needs Python 3.11 or later. It uses osmnx 2, geopandas 1 and pandas 2.1 or later.
 ```
