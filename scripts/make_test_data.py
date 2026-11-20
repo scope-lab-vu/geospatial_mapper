@@ -1,7 +1,9 @@
-"""Build the downtown Nashville test subset from the INRIX map release files.
+"""Build the test areas from the INRIX map release files.
 
-The source files are licensed and must never be committed. Pass their scp locations as
-arguments; the output folder (tests/data by default) is gitignored.
+Writes two areas: downtown Nashville (Davidson XDs inside a box around the interstate loop)
+and all of Crockett County. The source files are licensed and must never be committed.
+Pass their scp locations the first time; later runs reuse the copies in <out>/raw/.
+The output folder (tests/data by default) is gitignored.
 
     python scripts/make_test_data.py --geojson-src HOST:/path/USA_Tennessee.geojson \
         --csv-src HOST:/path/inrix_osm_conflation_USA_Tennessee.csv
@@ -21,11 +23,24 @@ logger = logging.getLogger("make_test_data")
 
 # Downtown Nashville: the interstate loop, its interchanges and the Cumberland River bridges.
 DOWNTOWN = box(-86.81, 36.14, -86.76, 36.18)
-COUNTY = "DAVIDSON"
 
 
-def fetch(source, raw_dir):
-    """Copy one scp source into raw_dir unless a file with that name is already there."""
+def area_masks(segments):
+    """Each area's name and a mask selecting its XDs."""
+    return {
+        "downtown": (segments["County"] == "DAVIDSON") & segments.geometry.within(DOWNTOWN),
+        "crockett": segments["County"] == "CROCKETT",
+    }
+
+
+def fetch(source, raw_dir, suffix):
+    """Copy one scp source into raw_dir, or reuse the single *suffix file already there."""
+    if source is None:
+        found = sorted(raw_dir.glob(f"*{suffix}"))
+        if len(found) != 1:
+            sys.exit(f"pass the {suffix} source: {raw_dir} holds {len(found)} {suffix} files, expected 1")
+        logger.info("using existing %s", found[0])
+        return found[0]
     target = raw_dir / Path(source.split(":", 1)[-1]).name
     if target.exists():
         logger.info("using existing %s", target)
@@ -38,8 +53,8 @@ def fetch(source, raw_dir):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--geojson-src", required=True, help="scp source of the INRIX map release GeoJSON")
-    parser.add_argument("--csv-src", required=True, help="scp source of the INRIX OSM conflation CSV")
+    parser.add_argument("--geojson-src", help="scp source of the INRIX map release GeoJSON (needed the first time)")
+    parser.add_argument("--csv-src", help="scp source of the INRIX OSM conflation CSV (needed the first time)")
     parser.add_argument("--out", default="tests/data", type=Path, help="output folder (default tests/data)")
     args = parser.parse_args()
 
@@ -52,23 +67,21 @@ def main():
 
     raw_dir = args.out / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    geojson = fetch(args.geojson_src, raw_dir)
-    csv = fetch(args.csv_src, raw_dir)
+    geojson = fetch(args.geojson_src, raw_dir, ".geojson")
+    csv = fetch(args.csv_src, raw_dir, ".csv")
 
     segments = gpd.read_file(geojson)
-    subset = segments[(segments["County"] == COUNTY) & segments.geometry.within(DOWNTOWN)]
-    if subset.empty:
-        sys.exit(f"no {COUNTY} XD segments inside {DOWNTOWN.bounds} in {geojson}")
-    subset_ids = set(pd.to_numeric(subset["XDSegID"]))
-
     conflation = pd.read_csv(csv, dtype={"OSMWayIDs": str, "OSMWayDirections": str})
-    conflation = conflation[conflation["XDSegID"].isin(subset_ids)]
-
-    subset.to_file(args.out / "downtown.geojson", driver="GeoJSON")
-    conflation.to_csv(args.out / "downtown.csv", index=False)
-    logger.info("wrote %d XD segments and %d conflation rows (covering %d XDs) to %s",
-                len(subset), len(conflation), conflation["XDSegID"].nunique(), args.out)
-    print(f"{len(subset)} XD segments, {len(conflation)} conflation rows written to {args.out}")
+    for area, mask in area_masks(segments).items():
+        subset = segments[mask]
+        if subset.empty:
+            sys.exit(f"no XD segments for area {area} in {geojson}")
+        rows = conflation[conflation["XDSegID"].isin(set(pd.to_numeric(subset["XDSegID"])))]
+        subset.to_file(args.out / f"{area}.geojson", driver="GeoJSON")
+        rows.to_csv(args.out / f"{area}.csv", index=False)
+        logger.info("%s: wrote %d XD segments and %d conflation rows (covering %d XDs) to %s",
+                    area, len(subset), len(rows), rows["XDSegID"].nunique(), args.out)
+        print(f"{area}: {len(subset)} XD segments, {len(rows)} conflation rows written to {args.out}")
 
 
 if __name__ == "__main__":

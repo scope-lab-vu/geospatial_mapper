@@ -17,20 +17,27 @@ NODES = {
     2: (-86.7790, 36.1600),  # J, junction with Side St
     3: (-86.7780, 36.1600),  # B, east end of Main St
     4: (-86.7790, 36.1610),  # S, north end of Side St
+    5: (-86.7770, 36.1600),  # E2, the next block of Main St past B
+    6: (-86.7760, 36.1600),  # F, end of the block after E2
     11: (-89.2000, 36.0000),  # P, Crockett road start
     12: (-89.2000, 36.0009),  # Q, Crockett road end
 }
 
-# (u, v, key, osmid, highway)
+# (u, v, key, osmid, highway, reversed). Every road is two-way: the edge in the way's drawn order has
+# reversed=False and its (v, u) twin has reversed=True, as osmnx builds them.
 EDGES = [
-    (1, 2, 0, [100, 101], "primary"),
-    (2, 1, 0, [100, 101], "primary"),
-    (2, 3, 0, [100, 101], "primary"),
-    (3, 2, 0, [100, 101], "primary"),
-    (2, 4, 0, 200, "residential"),
-    (4, 2, 0, 200, "residential"),
-    (11, 12, 0, 300, "residential"),
-    (12, 11, 0, 300, "residential"),
+    (1, 2, 0, [100, 101], "primary", False),
+    (2, 1, 0, [100, 101], "primary", True),
+    (2, 3, 0, [100, 101], "primary", False),
+    (3, 2, 0, [100, 101], "primary", True),
+    (3, 5, 0, [100, 101], "primary", False),
+    (5, 3, 0, [100, 101], "primary", True),
+    (5, 6, 0, 400, "primary", False),
+    (6, 5, 0, 400, "primary", True),
+    (2, 4, 0, 200, "residential", False),
+    (4, 2, 0, 200, "residential", True),
+    (11, 12, 0, 300, "residential", False),
+    (12, 11, 0, 300, "residential", True),
 ]
 
 
@@ -59,7 +66,8 @@ def _tiny_graph():
         crs=4326,
     )
     edges = gpd.GeoDataFrame(
-        {"osmid": [e[3] for e in EDGES], "highway": [e[4] for e in EDGES]},
+        {"osmid": [e[3] for e in EDGES], "highway": [e[4] for e in EDGES],
+         "reversed": [e[5] for e in EDGES], "oneway": [False] * len(EDGES)},
         geometry=[LineString([NODES[u], NODES[v]]) for u, v, *_ in EDGES],
         index=pd.MultiIndex.from_tuples([e[:3] for e in EDGES], names=["u", "v", "key"]),
         crs=4326,
@@ -78,21 +86,42 @@ def strict_chained_assignment():
         yield
 
 
+def north(a, b):
+    """The line a -> b moved about 3 m north."""
+    return LineString([(a[0], a[1] + OFFSET_DEG), (b[0], b[1] + OFFSET_DEG)])
+
+
+def east(a, b):
+    """The line a -> b moved about 2.4 m east."""
+    return LineString([(a[0] + OFFSET_DEG, a[1]), (b[0] + OFFSET_DEG, b[1])])
+
+
+def xd_rows(xd9_name="I-99 N"):
+    """The tiny network's XDs. Bearing stays for 0.2.0-era code, which required it."""
+    return [
+        # On Main St from A to B, eastbound; conflated to ways 100 and 101.
+        {"County": "DAVIDSON", "XDSegID": 5, "FRC": 4, "RoadName": "ALPHA ROAD", "Bearing": "E",
+         "geometry": north(NODES[1], NODES[3])},
+        # On a Crockett road, northbound.
+        {"County": "CROCKETT", "XDSegID": 6, "FRC": 4, "RoadName": "GAMMA ROAD", "Bearing": "O",
+         "geometry": east(NODES[11], NODES[12])},
+        # On the block E2 -> F, but conflated to a way that no longer exists (999).
+        {"County": "DAVIDSON", "XDSegID": 8, "FRC": 4, "RoadName": "TEST ST", "Bearing": "E",
+         "geometry": north(NODES[5], NODES[6])},
+        # An FRC 1 XD over the residential Side St, also with a stale way ID.
+        {"County": "DAVIDSON", "XDSegID": 9, "FRC": 1, "RoadName": xd9_name, "Bearing": "N",
+         "geometry": east(NODES[2], NODES[4])},
+    ]
+
+
+CONFLATION = [(5, "100;101", "P;P"), (6, "300", "P"), (8, "999", "P"), (9, "999", "P")]
+
+
 @pytest.fixture
 def tiny_inputs(tmp_path):
-    """A hand-made Nashville road network with one Davidson XD and one Crockett XD."""
-    a, b = NODES[1], NODES[3]
-    p, q = NODES[11], NODES[12]
-    geojson = write_geojson(
-        tmp_path / "xd.geojson",
-        [
-            {"County": "DAVIDSON", "XDSegID": 5, "Bearing": "E",
-             "geometry": LineString([(a[0], a[1] + OFFSET_DEG), (b[0], b[1] + OFFSET_DEG)])},
-            {"County": "CROCKETT", "XDSegID": 6, "Bearing": "O",
-             "geometry": LineString([(p[0] + OFFSET_DEG, p[1]), (q[0] + OFFSET_DEG, q[1])])},
-        ],
-    )
-    csv = write_conflation(tmp_path / "conflation.csv", [(5, "100;101", "P;P"), (6, "300", "P")])
+    """A hand-made Nashville road network with Davidson XDs 5, 8 and 9 and Crockett XD 6."""
+    geojson = write_geojson(tmp_path / "xd.geojson", xd_rows())
+    csv = write_conflation(tmp_path / "conflation.csv", CONFLATION)
     return SimpleNamespace(geojson=geojson, csv=csv, graph=_tiny_graph())
 
 
