@@ -158,3 +158,12 @@ def test_worker_count_keeps_reserved_cores_free():
     assert i2o._worker_count(3, 2, cpu_count=8) == 3
     assert i2o._worker_count(10, 2, cpu_count=2) == 1
     assert i2o._worker_count(10, 0, cpu_count=4) == 4
+
+
+@pytest.mark.parametrize("county", ["DAVIDSON", "CROCKETT"])  # CROCKETT needs no fallback, DAVIDSON does
+def test_output_column_types(patched_graph, county):
+    out = i2o.serial(patched_graph.geojson, patched_graph.csv, county)
+    assert not out.empty
+    for column in ["u", "v", "key", "osmid", "XDSegID"]:
+        assert out[column].dtype == "int64", (column, out[column].dtype)
+    assert out["overlap_m"].dtype == "float64"

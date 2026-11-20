@@ -30,7 +30,10 @@ class MatchConfig:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, numbers.Real):
                 raise TypeError(f"MatchConfig.{name} must be a number, got {type(value).__name__} {value!r}")
-            object.__setattr__(self, name, float(value))
+            try:
+                object.__setattr__(self, name, float(value))
+            except OverflowError:
+                raise ValueError(f"MatchConfig.{name} is too large: {value!r}") from None
         if isinstance(self.reserved_cores, bool) or not isinstance(self.reserved_cores, numbers.Integral):
             raise TypeError(f"MatchConfig.reserved_cores must be an integer, got "
                             f"{type(self.reserved_cores).__name__} {self.reserved_cores!r}")
@@ -52,8 +55,8 @@ class MatchConfig:
     def from_toml(cls, path):
         """Read settings from a TOML file of top-level keys; missing keys keep their defaults."""
         try:
-            values = tomllib.loads(Path(path).read_text())
-        except (OSError, tomllib.TOMLDecodeError) as exc:
+            values = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
             raise ValueError(f"{path}: cannot read TOML settings: {exc}") from exc
         known = {field.name for field in dataclasses.fields(cls)}
         unknown = sorted(set(values) - known)

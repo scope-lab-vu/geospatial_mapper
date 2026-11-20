@@ -36,6 +36,8 @@ TOLERANCE_M = 1e-6
 
 PAIR = ["u", "v", "key", "XDSegID"]
 MATCH_COLUMNS = ["u", "v", "key", "osmid", "XDSegID", "osm_geom", "inrix_geom", "overlap_m", "source"]
+MATCH_TYPES = {"u": "int64", "v": "int64", "key": "int64", "osmid": "int64", "XDSegID": "int64", "overlap_m": "float64"}
+_ROW_COLUMNS = ["u", "v", "key", "osmid", "XDSegID", "overlap_m", "intervals"]
 
 
 def band(xd_line, half_width_m):
@@ -115,10 +117,15 @@ def _tags(highway):
     return set(highway) if isinstance(highway, list) else {highway}
 
 
+def is_interstate(road_name):
+    """True for an INRIX RoadName naming an interstate, such as "I-40 E"."""
+    return isinstance(road_name, str) and bool(INTERSTATE_NAME.match(road_name))
+
+
 def road_level_allows(road_name, frc, highway):
     """Whether a fallback match may put this XD on an edge with these OSM highway tags."""
     tags = _tags(highway)
-    if isinstance(road_name, str) and INTERSTATE_NAME.match(road_name):
+    if is_interstate(road_name):
         return bool(tags & INTERSTATE_EDGES)
     if frc <= 2:
         return True
@@ -167,13 +174,23 @@ def _xd_frame(xds_utm):
                          "RoadName": xds_utm["RoadName"].to_numpy(), "xd_line": xds_utm.geometry.to_numpy()})
 
 
+def _edge_frame(edges_utm, columns):
+    """A plain DataFrame of the chosen edge columns, with the edge line as edge_line."""
+    frame = pd.DataFrame({c: edges_utm[c].to_numpy() for c in columns})
+    frame["edge_line"] = edges_utm.geometry.to_numpy()
+    return frame
+
+
+def _rows(frame):
+    """Match rows with typed columns, also when empty."""
+    if frame.empty:
+        return pd.DataFrame({c: pd.Series(dtype=MATCH_TYPES.get(c, "object")) for c in _ROW_COLUMNS})
+    return frame[_ROW_COLUMNS].astype({c: t for c, t in MATCH_TYPES.items() if c in _ROW_COLUMNS})
+
+
 def way_id_candidates(edges_utm, conflation, xds_utm):
     """Edges carrying a way the conflation lists for an XD, one row per (edge, way, XD)."""
-    osm = pd.DataFrame({"u": edges_utm["u"].to_numpy(), "v": edges_utm["v"].to_numpy(),
-                        "key": edges_utm["key"].to_numpy(), "osmid": edges_utm["osmid"].to_numpy(),
-                        "reversed": edges_utm["reversed"].to_numpy(), "oneway": edges_utm["oneway"].to_numpy(),
-                        "highway": edges_utm["highway"].to_numpy(), "edge_line": edges_utm.geometry.to_numpy()})
-    osm["edge_osmid"] = osm["osmid"]
+    osm = _edge_frame(edges_utm, ["u", "v", "key", "osmid", "reversed", "oneway", "highway"])
     osm = osm.explode("osmid")
     osm["osmid"] = osm["osmid"].astype("int64")
     return (osm.merge(conflation, left_on="osmid", right_on="OSMWayIDs", how="inner")
@@ -181,30 +198,21 @@ def way_id_candidates(edges_utm, conflation, xds_utm):
                .reset_index(drop=True))
 
 
-def keep_along(candidates, config):
-    """Measured candidates that run along their XD in its direction."""
-    rows = _measure(candidates, config)
-    return rows[rows["runs_with"] & (rows["along_m"] >= rows["required_m"] - TOLERANCE_M)]
-
-
 def geometry_fallback(edges_utm, xds_utm, seen_pairs, config):
     """Edges found by geometry alone for these XDs; returns (rows, rejection counts by reason)."""
-    empty = pd.DataFrame(columns=["u", "v", "key", "osmid", "XDSegID", "overlap_m", "intervals"])
     if len(xds_utm) == 0 or len(edges_utm) == 0:
-        return empty, {}
+        return _rows(pd.DataFrame()), {}
     bands = gpd.GeoDataFrame(_xd_frame(xds_utm),
                              geometry=[band(x, config.band_half_width_m) for x in xds_utm.geometry],
                              crs=xds_utm.crs)
-    edges = gpd.GeoDataFrame({"u": edges_utm["u"].to_numpy(), "v": edges_utm["v"].to_numpy(),
-                              "key": edges_utm["key"].to_numpy(), "osmid": edges_utm["osmid"].to_numpy(),
-                              "highway": edges_utm["highway"].to_numpy()},
-                             geometry=edges_utm.geometry.to_numpy(), crs=edges_utm.crs)
+    edges = gpd.GeoDataFrame(_edge_frame(edges_utm, ["u", "v", "key", "osmid", "highway"]),
+                             geometry="edge_line", crs=edges_utm.crs)
     hits = gpd.sjoin(edges, bands, how="inner", predicate="intersects")
-    hits = pd.DataFrame(hits.drop(columns="index_right")).rename(columns={"geometry": "edge_line"})
+    hits = pd.DataFrame(hits.drop(columns="index_right"))
     unseen = [(u, v, k, x) not in seen_pairs for u, v, k, x in zip(hits.u, hits.v, hits.key, hits.XDSegID)]
     hits = hits[unseen]
     if hits.empty:
-        return empty, {}
+        return _rows(pd.DataFrame()), {}
 
     rows = _measure(hits, config)
     reasons = []
@@ -224,11 +232,13 @@ def geometry_fallback(edges_utm, xds_utm, seen_pairs, config):
                         "osmid": [_smallest_way(o) for o in kept["osmid"]],
                         "XDSegID": kept["XDSegID"].to_numpy(), "overlap_m": kept["along_m"].to_numpy(),
                         "intervals": kept["intervals"].to_list()})
-    return out, rejected
+    return _rows(out), rejected
 
 
 def match_county(edges, conflation, xds, config):
-    """Match one county's XDs to OSM edges; returns (rows in MATCH_COLUMNS, P/N disagreements).
+    """Match one county's XDs to OSM edges; returns rows in MATCH_COLUMNS.
+
+    The INFO summary carries the P/N disagreement count and fallback rejections as `extra`.
 
     edges: osmnx edges (EPSG:4326, indexed by u, v, key); conflation: that county's rows from
     load_conflation; xds: that county's XDs (EPSG:4326) with XDSegID, FRC and RoadName.
@@ -254,9 +264,10 @@ def match_county(edges, conflation, xds, config):
                        disagreements, [int(xd) for xd in sorted(disagree["XDSegID"].unique())[:5]])
 
     kept = measured[long_enough & measured["runs_with"]]
-    conflation_rows = pd.DataFrame({"u": kept["u"].to_numpy(), "v": kept["v"].to_numpy(), "key": kept["key"].to_numpy(),
-                                    "osmid": kept["osmid"].to_numpy(), "XDSegID": kept["XDSegID"].to_numpy(),
-                                    "overlap_m": kept["along_m"].to_numpy(), "intervals": kept["intervals"].to_list()})
+    conflation_rows = _rows(pd.DataFrame({
+        "u": kept["u"].to_numpy(), "v": kept["v"].to_numpy(), "key": kept["key"].to_numpy(),
+        "osmid": kept["osmid"].to_numpy(), "XDSegID": kept["XDSegID"].to_numpy(),
+        "overlap_m": kept["along_m"].to_numpy(), "intervals": kept["intervals"].to_list()}))
     logger.debug("%d way-ID rows kept by direction and the runs-along rule", len(conflation_rows))
 
     intervals_by_xd = conflation_rows.groupby("XDSegID")["intervals"].sum().to_dict() if len(conflation_rows) else {}
@@ -269,8 +280,9 @@ def match_county(edges, conflation, xds, config):
     logger.debug("%d XDs below %.2f coverage searched by geometry: %d rows kept, rejected %s",
                  len(needs_fallback), config.fallback_below_coverage, len(fallback_rows), rejected)
 
-    rows = pd.concat([conflation_rows.assign(source="conflation"), fallback_rows.assign(source="geometry")],
-                     ignore_index=True)
+    parts = [frame.assign(source=source)
+             for frame, source in ((conflation_rows, "conflation"), (fallback_rows, "geometry")) if len(frame)]
+    rows = pd.concat(parts, ignore_index=True) if parts else _rows(pd.DataFrame()).assign(source=pd.Series(dtype="object"))
     rows["source_rank"] = (rows["source"] != "conflation").astype(int)
     rows = (rows.sort_values(["source_rank", "osmid"], kind="stable")
                 .drop_duplicates(PAIR).drop(columns=["source_rank", "intervals"]))
@@ -279,11 +291,11 @@ def match_county(edges, conflation, xds, config):
     xd_geom = dict(zip(xds["XDSegID"], xds.geometry))
     rows["osm_geom"] = [osm_geom[(u, v, k)] for u, v, k in zip(rows.u, rows.v, rows.key)]
     rows["inrix_geom"] = [xd_geom[x] for x in rows.XDSegID]
-    rows = rows[MATCH_COLUMNS].reset_index(drop=True)
+    rows = rows[MATCH_COLUMNS].astype(MATCH_TYPES).reset_index(drop=True)
 
     matched = rows["XDSegID"].nunique()
     logger.info("%d edge-XD pairs: %d XDs matched, %d unmatched, %d searched by geometry, "
                 "%d P/N disagreements, fallback rejections %s",
                 len(rows), matched, len(xds) - matched, len(needs_fallback), disagreements, rejected,
                 extra={"pn_disagreements": disagreements, "fallback_rejections": rejected})
-    return rows, disagreements
+    return rows

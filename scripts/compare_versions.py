@@ -60,12 +60,17 @@ def child(args):
     result = inrix_to_osm.serial(str(data / f"{args.area}.geojson"), str(data / f"{args.area}.csv"), AREAS[args.area])
     seconds = time.perf_counter() - start
     pn = sum(getattr(r, "pn_disagreements", 0) for r in records) if has_pn else None
+    rejections = {}
+    for record in records:
+        for reason, count in getattr(record, "fallback_rejections", {}).items():
+            rejections[reason] = rejections.get(reason, 0) + count
 
     out = result.copy()
     for column in GEOMETRY_COLUMNS:
         out[column] = [geom.wkb_hex for geom in out[column]]
     out.to_csv(args.out_csv, index=False)
-    Path(args.out_json).write_text(json.dumps({"file": geo_mapper_api.__file__, "seconds": seconds, "pn": pn}))
+    Path(args.out_json).write_text(json.dumps({"file": geo_mapper_api.__file__, "seconds": seconds, "pn": pn,
+                                                "rejections": rejections if has_pn else None}))
 
 
 def extract_base(base, into):
@@ -79,7 +84,7 @@ def extract_base(base, into):
 
 
 def run_version(label, python, src, area, data, out_dir):
-    """Run one version RUNS times on an area; return (result frame, seconds of the last run, P/N count)."""
+    """Run one version RUNS times on an area; return (frame, seconds of the last run, P/N count, rejections)."""
     import pandas as pd
 
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")}
@@ -98,7 +103,7 @@ def run_version(label, python, src, area, data, out_dir):
         if not Path(info["file"]).resolve().is_relative_to(Path(src).resolve()):
             sys.exit(f"{label} imported geo_mapper_api from {info['file']}, not from {src}")
         frame = pd.read_csv(out_csv)
-        results.append((frame, info["seconds"], info.get("pn")))
+        results.append((frame, info["seconds"], info.get("pn"), info.get("rejections")))
         logger.debug("%s %s run %d: %d rows in %.1f s", label, area, run, len(frame), info["seconds"])
     first, last = (set(map(tuple, r[0][PAIR].itertuples(index=False))) for r in (results[0], results[-1]))
     if first != last:
@@ -122,7 +127,7 @@ def table(area, data, base_label, base, head):
     total = len(xds)
 
     scored = []
-    for frame, _, _ in (base, head):
+    for frame, *_ in (base, head):
         frame = frame.copy()
         for column in GEOMETRY_COLUMNS:
             frame[column] = shapely.from_wkb(frame[column].map(bytes.fromhex))
@@ -131,6 +136,10 @@ def table(area, data, base_label, base, head):
     (base_m, base_pairs), (head_m, head_pairs) = scored
     rows = [(name, base_m[name], head_m[name]) for name in base_m]
     rows.append(("P/N disagreements", "n/a" if base[2] is None else base[2], "n/a" if head[2] is None else head[2]))
+    for reason in sorted(set(base[3] or {}) | set(head[3] or {})):
+        rows.append((f"fallback candidates rejected: {reason}",
+                     "n/a" if base[3] is None else base[3].get(reason, 0),
+                     "n/a" if head[3] is None else head[3].get(reason, 0)))
     rows.append(("pairs only in this version", len(base_pairs - head_pairs), len(head_pairs - base_pairs)))
     rows.append(("run seconds", f"{base[1]:.1f}", f"{head[1]:.1f}"))
     lines = [f"### {area} ({AREAS[area]}, {total} XDs)", "", f"| Measure | {base_label} | working tree |", "|---|---|---|"]

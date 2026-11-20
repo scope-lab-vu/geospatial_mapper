@@ -11,7 +11,7 @@ import pandas as pd
 import geo_mapper_api.converters as gma
 from geo_mapper_api import filters, matching
 
-PAIR = ["u", "v", "key", "XDSegID"]
+PAIR = matching.PAIR
 COVERED_SHARE = 0.9
 # An XD has an OSM road nearby when this share of its length lies within band_half_width_m of the
 # OSM network. XDs without one are OSM data gaps no matcher can cover, and are reported apart.
@@ -52,7 +52,7 @@ def xd_coverage_table(table, xds):
 
 def interstate_crossings(xds):
     """Pairs of an interstate XD and a non-interstate XD whose lines cross."""
-    named = xds["RoadName"].map(lambda name: isinstance(name, str) and bool(matching.INTERSTATE_NAME.match(name)))
+    named = xds["RoadName"].map(matching.is_interstate)
     interstates, others = xds[named], xds[~named]
     joined = gpd.sjoin(interstates[["XDSegID", "geometry"]], others[["XDSegID", "geometry"]],
                        predicate="crosses", lsuffix="interstate", rsuffix="other")

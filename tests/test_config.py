@@ -87,3 +87,15 @@ def test_from_toml_missing_file(MatchConfig, tmp_path):
     path = tmp_path / "nowhere.toml"
     with pytest.raises(ValueError, match="nowhere.toml"):
         MatchConfig.from_toml(path)
+
+
+def test_huge_integer_names_the_field(MatchConfig):
+    with pytest.raises(ValueError, match="band_half_width_m"):
+        MatchConfig(band_half_width_m=10**400)
+
+
+def test_from_toml_non_utf8_file_names_the_file(MatchConfig, tmp_path):
+    path = tmp_path / "latin1.toml"
+    path.write_bytes("# caf\xe9\nband_half_width_m = 15\n".encode("latin-1"))
+    with pytest.raises(ValueError, match="latin1.toml"):
+        MatchConfig.from_toml(path)

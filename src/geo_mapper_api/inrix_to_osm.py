@@ -17,7 +17,8 @@ RESULT_COLUMNS = ["u", "v", "key", "osmid", "XDSegID", "osm_geom", "inrix_geom",
 
 
 def _empty_result():
-    return pd.DataFrame(columns=RESULT_COLUMNS)
+    types = dict(matching.MATCH_TYPES, county="object")
+    return pd.DataFrame({c: pd.Series(dtype=types.get(c, "object")) for c in RESULT_COLUMNS})
 
 
 def process_county(conflation, inrix_df, county_name, config):
@@ -31,7 +32,7 @@ def process_county(conflation, inrix_df, county_name, config):
     edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
     logger.debug("%s: OSM graph has %d edges", county_name, len(edges))
 
-    result, _ = matching.match_county(edges, county_conflation, county_df, config)
+    result = matching.match_county(edges, county_conflation, county_df, config)
     if result.empty:
         logger.warning("%s: no edges matched any XD", county_name)
         return _empty_result()

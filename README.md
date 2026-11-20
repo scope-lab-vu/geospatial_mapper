@@ -73,7 +73,7 @@ For each XD, an OSM edge is matched when:
 2. it points the XD's direction of travel where they meet (INRIX's P/N flag is compared with this on two-way streets, and disagreements are logged as warnings);
 3. it runs along the XD: inside a band `band_half_width_m` either side of the XD, cut square at the XD's ends, the edge reaches at least `min_overlap_m` along the XD (half the XD's length for XDs shorter than twice that). Cross streets and the next block past the XD's end reach almost nowhere along it, so they are not matched.
 
-An XD whose matches cover less than `fallback_below_coverage` of its length (usually because INRIX's way IDs are out of date) is searched again by geometry alone. Fallback matches must also pass a road-level rule: an interstate XD (`RoadName` starting `I-` and a digit) only matches `motorway` or `motorway_link` edges, and a non-interstate XD of road class 3 to 5 never matches a `motorway` edge.
+An XD whose matches cover less than `fallback_below_coverage` of its length (usually because INRIX's way IDs are out of date) is searched again by geometry alone. Fallback matches must also pass a road-level rule: an interstate XD (`RoadName` starting `I-` and a digit) only matches `motorway` or `motorway_link` edges, and a non-interstate XD of road class 3 to 5 never matches a `motorway` edge. An XD with no `RoadName` is judged by its road class, so an unnamed interstate XD can lose motorway matches but never gains wrong ones.
 
 ## Settings
 Every tunable number lives in `MatchConfig`. Distances are in meters.
