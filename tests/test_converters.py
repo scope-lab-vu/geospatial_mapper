@@ -64,7 +64,7 @@ def test_ids_non_numeric_name_file_and_values(tmp_path):
         assert str(path) in str(err.value) and "OSMWayIDs" in str(err.value) and value in str(err.value)
 
     geojson = write_geojson(tmp_path / "bad.geojson", [
-        {"County": "DAVIDSON", "XDSegID": "x1", "FRC": 4, "RoadName": "MAIN ST", "geometry": EAST_LINE},
+        {"County": "DAVIDSON", "XDSegID": "x1", "FRC": 4, "RoadName": "ALPHA ROAD", "geometry": EAST_LINE},
     ])
     with pytest.raises(ValueError) as err:
         gma.load_and_prepare_inrix_data_for_multiple_counties(geojson, ["DAVIDSON"])
@@ -78,7 +78,7 @@ def test_loader_unknown_county_lists_names(tiny_inputs):
 
 def test_loader_missing_columns_names_file(tmp_path):
     geojson = write_geojson(tmp_path / "nofrc.geojson", [
-        {"County": "DAVIDSON", "XDSegID": 5, "RoadName": "MAIN ST", "geometry": EAST_LINE},
+        {"County": "DAVIDSON", "XDSegID": 5, "RoadName": "ALPHA ROAD", "geometry": EAST_LINE},
     ])
 
     with pytest.raises(ValueError) as err:
@@ -91,7 +91,7 @@ def test_loader_missing_columns_names_file(tmp_path):
 @pytest.mark.parametrize("frc, shown", [(6, "6"), (0, "0"), ("x", "x")])
 def test_loader_rejects_bad_frc(tmp_path, frc, shown):
     geojson = write_geojson(tmp_path / "frc.geojson", [
-        {"County": "DAVIDSON", "XDSegID": 5, "FRC": frc, "RoadName": "MAIN ST", "geometry": EAST_LINE},
+        {"County": "DAVIDSON", "XDSegID": 5, "FRC": frc, "RoadName": "ALPHA ROAD", "geometry": EAST_LINE},
     ])
 
     with pytest.raises(ValueError) as err:
@@ -117,7 +117,7 @@ def test_loader_rejects_empty_or_zero_length_lines(tmp_path, geometry):
 def test_loader_rejects_non_4326_geojson(tmp_path):
     path = tmp_path / "mercator.geojson"
     gpd.GeoDataFrame(
-        {"County": ["DAVIDSON"], "XDSegID": [5], "FRC": [4], "RoadName": ["MAIN ST"]}, geometry=[EAST_LINE], crs=4326,
+        {"County": ["DAVIDSON"], "XDSegID": [5], "FRC": [4], "RoadName": ["ALPHA ROAD"]}, geometry=[EAST_LINE], crs=4326,
     ).to_crs(3857).to_file(path, driver="GeoJSON")
 
     with pytest.raises(ValueError) as err:

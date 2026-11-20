@@ -9,8 +9,7 @@ import osmnx as ox
 import pandas as pd
 
 import geo_mapper_api.converters as gma
-import geo_mapper_api.filters as filters
-from geo_mapper_api import matching
+from geo_mapper_api import filters, matching
 
 PAIR = ["u", "v", "key", "XDSegID"]
 COVERED_SHARE = 0.9

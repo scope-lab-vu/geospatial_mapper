@@ -100,10 +100,10 @@ def xd_rows(xd9_name="I-99 N"):
     """The tiny network's XDs. Bearing stays for 0.2.0-era code, which required it."""
     return [
         # On Main St from A to B, eastbound; conflated to ways 100 and 101.
-        {"County": "DAVIDSON", "XDSegID": 5, "FRC": 4, "RoadName": "MAIN ST", "Bearing": "E",
+        {"County": "DAVIDSON", "XDSegID": 5, "FRC": 4, "RoadName": "ALPHA ROAD", "Bearing": "E",
          "geometry": north(NODES[1], NODES[3])},
         # On a Crockett road, northbound.
-        {"County": "CROCKETT", "XDSegID": 6, "FRC": 4, "RoadName": "CROCKETT RD", "Bearing": "O",
+        {"County": "CROCKETT", "XDSegID": 6, "FRC": 4, "RoadName": "GAMMA ROAD", "Bearing": "O",
          "geometry": east(NODES[11], NODES[12])},
         # On the block E2 -> F, but conflated to a way that no longer exists (999).
         {"County": "DAVIDSON", "XDSegID": 8, "FRC": 4, "RoadName": "TEST ST", "Bearing": "E",

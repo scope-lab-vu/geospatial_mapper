@@ -14,6 +14,7 @@ zone). An edge belongs to an XD when it runs along the XD, in the XD's direction
 import logging
 import re
 from collections import Counter
+from itertools import pairwise
 
 import geopandas as gpd
 import numpy as np
@@ -69,7 +70,7 @@ def _intervals_along(part, xd_line):
     coords = list(part.coords)
     positions = [xd_line.project(Point(c)) for c in coords]
     intervals = []
-    for (a, b), (pa, pb) in zip(zip(coords, coords[1:]), zip(positions, positions[1:])):
+    for (a, b), (pa, pb) in zip(pairwise(coords), pairwise(positions)):
         low, high = min(pa, pb), max(pa, pb)
         segment = Point(a).distance(Point(b))
         if high - low > SEAM_SHARE_OF_XD * length and high - low > SEAM_SEGMENT_RATIO * segment:
@@ -250,7 +251,7 @@ def match_county(edges, conflation, xds, config):
     disagreements = len(disagree.drop_duplicates(PAIR))
     if disagreements:
         logger.warning("P/N disagrees with geometry on %d edge-XD pairs (geometry decides), e.g. XDs %s",
-                       disagreements, sorted(disagree["XDSegID"].unique())[:5])
+                       disagreements, [int(xd) for xd in sorted(disagree["XDSegID"].unique())[:5]])
 
     kept = measured[long_enough & measured["runs_with"]]
     conflation_rows = pd.DataFrame({"u": kept["u"].to_numpy(), "v": kept["v"].to_numpy(), "key": kept["key"].to_numpy(),

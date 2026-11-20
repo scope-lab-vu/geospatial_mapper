@@ -20,7 +20,7 @@ This conflation `csv` should have the following features:
 
 Only `XDSegID`, `OSMWayIDs` and `OSMWayDirections` are required. `OSMWayIDs` and `OSMWayDirections` hold `;`-separated lists of the same length.
 
-The `geojson` data needs `County`, `XDSegID`, `Bearing` and a line geometry in EPSG:4326. INRIX files also carry fields such as these:
+The `geojson` data needs `County`, `XDSegID`, `FRC` (INRIX road class, 1 to 5), `RoadName` and a line geometry in EPSG:4326, drawn in the direction of travel. INRIX files also carry fields such as these:
 | Feature    | Type     | Example            |
 | ---------- | -------- | ------------------ |
 | OID        | Integer  | 7931440            |
@@ -55,17 +55,51 @@ Give it the map release GeoJSON, the conflation CSV, and one or more county name
 ```python
 import os
 
-from geo_mapper_api import inrix_to_osm
+from geo_mapper_api import MatchConfig, inrix_to_osm
 
 DATA_DIR = "./data"
 geojson_path = os.path.join(DATA_DIR, "USA_Tennessee.geojson")
 csv_path = os.path.join(DATA_DIR, "USA_Tennessee.csv")
 
 if __name__ == "__main__":
-    df = inrix_to_osm.parallel(geojson_path, csv_path, ["WILLIAMSON", "DAVIDSON"], threshold_distance=25)
+    df = inrix_to_osm.parallel(geojson_path, csv_path, ["WILLIAMSON", "DAVIDSON"], config=MatchConfig())
     df.to_csv(os.path.join(DATA_DIR, "inrix_osm.csv"), index=False)
 ```
-`parallel` runs each county in its own process, using every CPU core but two. It must be called under `if __name__ == "__main__":`, because the worker processes import your script again. `serial` takes the same arguments, runs one county at a time, and needs no guard.
+`parallel` runs each county in its own process, using every CPU core but `reserved_cores` (2 by default). It must be called under `if __name__ == "__main__":`, because the worker processes import your script again. `serial` takes the same arguments, runs one county at a time, and needs no guard. `config` is optional; leaving it out uses the defaults below.
+
+## How a match is decided
+For each XD, an OSM edge is matched when:
+1. it carries an OSM way that INRIX's conflation lists for the XD;
+2. it points the XD's direction of travel where they meet (INRIX's P/N flag is compared with this on two-way streets, and disagreements are logged as warnings);
+3. it runs along the XD: inside a band `band_half_width_m` either side of the XD, cut square at the XD's ends, the edge reaches at least `min_overlap_m` along the XD (half the XD's length for XDs shorter than twice that). Cross streets and the next block past the XD's end reach almost nowhere along it, so they are not matched.
+
+An XD whose matches cover less than `fallback_below_coverage` of its length (usually because INRIX's way IDs are out of date) is searched again by geometry alone. Fallback matches must also pass a road-level rule: an interstate XD (`RoadName` starting `I-` and a digit) only matches `motorway` or `motorway_link` edges, and a non-interstate XD of road class 3 to 5 never matches a `motorway` edge.
+
+## Settings
+Every tunable number lives in `MatchConfig`. Distances are in meters.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `band_half_width_m` | 15.0 | half-width of the band around each XD |
+| `min_overlap_m` | 10.0 | how far an edge must run along its XD inside the band |
+| `fallback_below_coverage` | 0.5 | XDs covered less than this share are searched by geometry; 0 turns the fallback off |
+| `hull_buffer_m` | 200.0 | margin around the county's XDs for the OSM download |
+| `reserved_cores` | 2 | CPU cores `parallel` leaves free |
+
+Settings can come from a TOML file of top-level keys; keys left out keep their defaults:
+```toml
+band_half_width_m = 20
+min_overlap_m = 10
+```
+```python
+config = MatchConfig.from_toml("matching.toml")
+```
+A wrong type raises `TypeError` and an invalid value raises `ValueError`, both naming the setting (and the file, for `from_toml`).
+
+## Known limits
+- An XD drawn more than `band_half_width_m` from every OSM road (the road was realigned, or OSM tags it as a track or service road the road filter leaves out) stays unmatched or partly covered.
+- An edge leaving the XD at an acute angle, such as a diverging ramp, can stay inside the band for 10 m or more and be matched. This mainly affects fallback matches, since a diverging road is usually a different OSM way.
+- Limited-access parkways that OSM tags `motorway` but INRIX classes 3 to 5 cannot be recovered by the fallback; their way-ID matches are unaffected.
 
 The result has one row per OSM edge and XD segment pair:
 | Column           | Type     | Example                                   |
@@ -77,17 +111,20 @@ The result has one row per OSM edge and XD segment pair:
 | XDSegID          | int      | 1524404117                                |
 | osm_geom         | geometry | LINESTRING (-86.7801 36.1602, ...)        |
 | inrix_geom       | geometry | LINESTRING (-86.7800 36.1603, ...)        |
-| distance         | float    | 1.42                                      |
-| within_threshold | bool     | True                                      |
+| overlap_m        | float    | 88.4                                      |
+| source           | str      | conflation                                |
 | county           | str      | DAVIDSON                                  |
 
-- `u`, `v` and `key` identify the edge in the osmnx graph. `osmid` is the OSM way that links the edge to the XD. When several ways do, it is the smallest of their IDs.
+- `u`, `v` and `key` identify the edge in the osmnx graph.
+- `osmid` is the OSM way that links the edge to the XD (the smallest, when several do). For `source == "geometry"` rows it is the smallest way ID on the edge.
 - Geometries are in EPSG:4326 (longitude, latitude).
-- `distance` is the closest distance in meters between the edge and the XD line. `threshold_distance` is in meters too.
+- `overlap_m` is how far the edge runs along the XD, in meters.
+- `source` is `conflation` for matches through INRIX's way IDs and `geometry` for fallback matches.
 - `county` holds the upper-cased county name.
 
 # Errors
-- Bad inputs raise `ValueError` before any county is processed. This covers a missing column, an unknown county, an empty county list, a missing or non-integer ID, geometries not in EPSG:4326, and a conflation row whose way and direction lists differ in length. The message names the file, the column and the offending values.
+- `config` that isn't a `MatchConfig` raises `TypeError` before anything is read.
+- Bad inputs raise `ValueError` before any county is processed. This covers a missing column, an unknown county, an empty county list, a missing or non-integer ID, an FRC outside 1 to 5, an empty or zero-length XD line, geometries not in EPSG:4326, and a conflation row whose way and direction lists differ in length. The message names the file, the column and the offending values.
 - A failure while processing a county raises `RuntimeError` with a message like `county 'DAVIDSON' failed: ConnectionError: ...`.
 
 # Logging

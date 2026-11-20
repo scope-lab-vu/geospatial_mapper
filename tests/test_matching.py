@@ -147,14 +147,14 @@ def test_required_overlap(matching):
 
 
 @pytest.mark.parametrize("road_name, frc, highway, allowed", [
-    ("I-40 E", 2, "motorway", True),
-    ("I-40 E", 2, "residential", False),
-    ("I-40 E", 1, ["motorway_link", "trunk"], True),
-    ("US-412", 2, "primary", True),
-    ("US-412", 2, "motorway", True),
-    ("CHURCH ST", 4, "motorway", False),
-    ("CHURCH ST", 4, "motorway_link", True),
-    ("CHURCH ST", 4, ["trunk", "motorway"], False),
+    ("I-99 E", 2, "motorway", True),
+    ("I-99 E", 2, "residential", False),
+    ("I-99 E", 1, ["motorway_link", "trunk"], True),
+    ("US-999", 2, "primary", True),
+    ("US-999", 2, "motorway", True),
+    ("BETA ROAD", 4, "motorway", False),
+    ("BETA ROAD", 4, "motorway_link", True),
+    ("BETA ROAD", 4, ["trunk", "motorway"], False),
     (None, 4, "motorway", False),
     (float("nan"), 2, "motorway", True),
     (float("nan"), 1, "residential", True),
@@ -217,7 +217,7 @@ def test_fallback_refuses_an_interstate_xd_on_a_residential_edge(matching, confi
 
 
 def test_fallback_accepts_a_ramp_xd_on_a_motorway_link(matching, config):
-    edges, xds = fallback_inputs("209", 4, LineString([(10, 1), (90, 1)]), "motorway_link")
+    edges, xds = fallback_inputs("999X", 4, LineString([(10, 1), (90, 1)]), "motorway_link")
     rows, rejected = matching.geometry_fallback(edges, xds, set(), config)
     assert list(zip(rows.u, rows.v, rows.key, rows.XDSegID)) == [(1, 2, 0, 7)]
     assert list(rows.osmid) == [500]
@@ -226,6 +226,6 @@ def test_fallback_accepts_a_ramp_xd_on_a_motorway_link(matching, config):
 
 
 def test_fallback_skips_a_pair_the_way_id_path_saw(matching, config):
-    edges, xds = fallback_inputs("209", 4, LineString([(10, 1), (90, 1)]), "motorway_link")
+    edges, xds = fallback_inputs("999X", 4, LineString([(10, 1), (90, 1)]), "motorway_link")
     rows, _ = matching.geometry_fallback(edges, xds, {(1, 2, 0, 7)}, config)
     assert rows.empty
