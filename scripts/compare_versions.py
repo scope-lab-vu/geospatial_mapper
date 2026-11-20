@@ -41,19 +41,31 @@ def child(args):
     ox.settings.use_cache = True
     ox.settings.cache_folder = str(Path(args.data) / "osm_cache")
 
+    import importlib.util
+
     import geo_mapper_api
     from geo_mapper_api import inrix_to_osm
+
+    # Versions with the matching module log their P/N disagreement count; collect it here.
+    has_pn = importlib.util.find_spec("geo_mapper_api.matching") is not None
+    records = []
+    handler = logging.Handler(logging.INFO)
+    handler.emit = records.append
+    matching_logger = logging.getLogger("geo_mapper_api.matching")
+    matching_logger.addHandler(handler)
+    matching_logger.setLevel(logging.INFO)
 
     data = Path(args.data)
     start = time.perf_counter()
     result = inrix_to_osm.serial(str(data / f"{args.area}.geojson"), str(data / f"{args.area}.csv"), AREAS[args.area])
     seconds = time.perf_counter() - start
+    pn = sum(getattr(r, "pn_disagreements", 0) for r in records) if has_pn else None
 
     out = result.copy()
     for column in GEOMETRY_COLUMNS:
         out[column] = [geom.wkb_hex for geom in out[column]]
     out.to_csv(args.out_csv, index=False)
-    Path(args.out_json).write_text(json.dumps({"file": geo_mapper_api.__file__, "seconds": seconds}))
+    Path(args.out_json).write_text(json.dumps({"file": geo_mapper_api.__file__, "seconds": seconds, "pn": pn}))
 
 
 def extract_base(base, into):
@@ -67,7 +79,7 @@ def extract_base(base, into):
 
 
 def run_version(label, python, src, area, data, out_dir):
-    """Run one version RUNS times on an area; return (result frame, seconds of the last run)."""
+    """Run one version RUNS times on an area; return (result frame, seconds of the last run, P/N count)."""
     import pandas as pd
 
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP")}
@@ -86,7 +98,7 @@ def run_version(label, python, src, area, data, out_dir):
         if not Path(info["file"]).resolve().is_relative_to(Path(src).resolve()):
             sys.exit(f"{label} imported geo_mapper_api from {info['file']}, not from {src}")
         frame = pd.read_csv(out_csv)
-        results.append((frame, info["seconds"]))
+        results.append((frame, info["seconds"], info.get("pn")))
         logger.debug("%s %s run %d: %d rows in %.1f s", label, area, run, len(frame), info["seconds"])
     first, last = (set(map(tuple, r[0][PAIR].itertuples(index=False))) for r in (results[0], results[-1]))
     if first != last:
@@ -94,22 +106,33 @@ def run_version(label, python, src, area, data, out_dir):
     return results[-1]
 
 
-def measures(frame, total_xds):
-    pairs = set(map(tuple, frame[PAIR].itertuples(index=False)))
-    matched = frame["XDSegID"].nunique()
-    return {"edge-XD pairs": len(pairs), "matched XDs": matched, "unmatched XDs": total_xds - matched}, pairs
-
-
 def table(area, data, base_label, base, head):
-    (base_frame, base_seconds), (head_frame, head_seconds) = base, head
-    import geopandas as gpd
+    """Score both versions with the working tree's evaluation measures and format one table."""
+    import osmnx as ox
+    import shapely
 
-    total = gpd.read_file(data / f"{area}.geojson")["XDSegID"].nunique()
-    base_m, base_pairs = measures(base_frame, total)
-    head_m, head_pairs = measures(head_frame, total)
+    import geo_mapper_api.converters as gma
+    from geo_mapper_api import MatchConfig, evaluation
+
+    ox.settings.use_cache = True
+    ox.settings.cache_folder = str(data / "osm_cache")
+    config = MatchConfig()
+    xds = gma.load_and_prepare_inrix_data_for_multiple_counties(data / f"{area}.geojson", [AREAS[area]])
+    edges = evaluation.area_edges(xds, config)
+    total = len(xds)
+
+    scored = []
+    for frame, _, _ in (base, head):
+        frame = frame.copy()
+        for column in GEOMETRY_COLUMNS:
+            frame[column] = shapely.from_wkb(frame[column].map(bytes.fromhex))
+        scored.append((evaluation.summary(frame, xds, edges, config),
+                       set(map(tuple, frame[PAIR].itertuples(index=False)))))
+    (base_m, base_pairs), (head_m, head_pairs) = scored
     rows = [(name, base_m[name], head_m[name]) for name in base_m]
+    rows.append(("P/N disagreements", "n/a" if base[2] is None else base[2], "n/a" if head[2] is None else head[2]))
     rows.append(("pairs only in this version", len(base_pairs - head_pairs), len(head_pairs - base_pairs)))
-    rows.append(("run seconds", f"{base_seconds:.1f}", f"{head_seconds:.1f}"))
+    rows.append(("run seconds", f"{base[1]:.1f}", f"{head[1]:.1f}"))
     lines = [f"### {area} ({AREAS[area]}, {total} XDs)", "", f"| Measure | {base_label} | working tree |", "|---|---|---|"]
     lines += [f"| {name} | {b} | {h} |" for name, b, h in rows]
     return "\n".join(lines) + "\n"
