@@ -71,7 +71,7 @@ def run(request):
 
 
 def test_graph_has_only_road_types(run):
-    # The anchored filter removes exact values; a raw multi-value such as "footway;steps" passes by design.
+    # The anchored filter removes exact values, so a raw multi-value such as "footway;steps" passes by design.
     excluded = set(EXCLUDED_HIGHWAY)
     for value in run["edges"]["highway"]:
         ways = value if isinstance(value, list) else [value]

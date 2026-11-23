@@ -134,7 +134,8 @@ def run_version(label, python, src, area, data, out_dir):
     first, last = (set(map(tuple, r["frame"][PAIR].itertuples(index=False))) for r in (results[0], results[-1]))
     if first != last:
         sys.exit(f"{label} on {area} gave different pairs on two runs ({len(first ^ last)} differ)")
-    return dict(results[-1], first_seconds=results[0]["seconds"], download_mb=results[0]["added_mb"])
+    last = {k: v for k, v in results[-1].items() if k != "added_mb"}
+    return dict(last, first_seconds=results[0]["seconds"], download_mb=results[0]["added_mb"])
 
 
 def _service_only_edges(edges):

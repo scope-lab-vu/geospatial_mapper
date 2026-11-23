@@ -98,8 +98,8 @@ def summary(result, xds, edges, config, highway=None):
     """The measures used to judge and compare matching results, as a dict.
 
     edges: the area's OSM road edges from area_edges, which decide which XDs have a road nearby.
-    highway: the road types of the graph the result was matched against, for the wrong-level check;
-    defaults to edges["highway"]. A version with another filter passes its own graph's here.
+    highway: the road types of the graph the result was matched against, for the wrong-level check.
+    It defaults to edges["highway"]. A version with another filter passes its own graph's here.
     """
     table = along_table(result, xds, config)
     coverage = xd_coverage_table(table, xds)

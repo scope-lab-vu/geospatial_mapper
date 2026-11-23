@@ -118,7 +118,7 @@ def xd_rows(xd9_name="I-99 N"):
         # On a Lake County service road, northbound, conflated to it (way 301).
         {"County": "LAKE", "XDSegID": 10, "FRC": 4, "RoadName": "DELTA ROAD", "Bearing": "N",
          "geometry": east(NODES[13], NODES[14])},
-        # Beside the same service road, southbound, with a stale way ID: only the fallback could reach it.
+        # Beside the same service road, southbound, with a stale way ID, so only the fallback could reach it.
         {"County": "LAKE", "XDSegID": 11, "FRC": 4, "RoadName": "EPSILON ROAD", "Bearing": "S",
          "geometry": east(NODES[14], NODES[13])},
     ]
