@@ -7,6 +7,7 @@ scored the same way.
 import geopandas as gpd
 import osmnx as ox
 import pandas as pd
+import shapely
 
 import geo_mapper_api.converters as gma
 from geo_mapper_api import filters, matching
@@ -67,19 +68,29 @@ def area_edges(xds, config):
 
 
 def road_nearby(xds, edges, config):
-    """XDSegIDs with an OSM road within band_half_width_m along at least ROAD_NEARBY_SHARE of their length."""
+    """XDSegIDs with an OSM road within band_half_width_m along at least ROAD_NEARBY_SHARE of their length.
+
+    Each XD is measured against only the edges within band_half_width_m of it, found with a spatial
+    index. Farther edges cannot reach the line, so this equals buffering the whole network, and it
+    stays fast for a whole county.
+    """
     utm = xds.estimate_utm_crs()
-    reach = edges.to_crs(utm).union_all().buffer(config.band_half_width_m)
-    lines = xds.to_crs(utm).geometry
-    return {xd for xd, line in zip(xds["XDSegID"], lines)
-            if line.intersection(reach).length >= ROAD_NEARBY_SHARE * line.length}
+    edge_lines = edges.to_crs(utm).geometry.to_numpy()
+    tree = shapely.STRtree(edge_lines)
+    nearby = set()
+    for xd, line in zip(xds["XDSegID"], xds.to_crs(utm).geometry):
+        near = edge_lines[tree.query(line, predicate="dwithin", distance=config.band_half_width_m)]
+        reach = shapely.union_all(near).buffer(config.band_half_width_m)
+        if line.intersection(reach).length >= ROAD_NEARBY_SHARE * line.length:
+            nearby.add(xd)
+    return nearby
 
 
 def wrong_level(result, xds, crossings, highway):
     """(wrong, unresolved): crossing XDs' rows on an edge the road-level rule refuses.
 
-    Rows whose edge isn't in `highway` (possible for another version's output, if osmnx numbered
-    edges differently) are counted as unresolved, never as fine.
+    highway: the road types of the graph the result was matched against, indexed by (u, v, key).
+    Rows whose edge isn't in it are counted as unresolved, never as fine.
     """
     crossing_xds = set(crossings["interstate"]) | set(crossings["other"])
     info = xds.set_index("XDSegID")
@@ -94,10 +105,12 @@ def wrong_level(result, xds, crossings, highway):
     return wrong, unresolved
 
 
-def summary(result, xds, edges, config):
+def summary(result, xds, edges, config, highway=None):
     """The measures used to judge and compare matching results, as a dict.
 
-    edges: the area's OSM edges from area_edges, shared by every version being compared.
+    edges: the area's OSM road edges from area_edges, which decide which XDs have a road nearby.
+    highway: the road types of the graph the result was matched against, for the wrong-level check.
+    It defaults to edges["highway"]. A version with another filter passes its own graph's here.
     """
     table = along_table(result, xds, config)
     coverage = xd_coverage_table(table, xds)
@@ -105,7 +118,7 @@ def summary(result, xds, edges, config):
     nearby = road_nearby(xds, edges, config)
     judged = coverage[coverage["XDSegID"].isin(matched & nearby)]["coverage"]
     crossings = interstate_crossings(xds)
-    wrong, unresolved = wrong_level(result, xds, crossings, edges["highway"])
+    wrong, unresolved = wrong_level(result, xds, crossings, edges["highway"] if highway is None else highway)
     return {
         "edge-XD pairs": len(result.drop_duplicates(PAIR)),
         "matched XDs": len(matched),

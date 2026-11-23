@@ -15,7 +15,8 @@ import pytest
 
 import geo_mapper_api.converters as gma
 import geo_mapper_api.inrix_to_osm as i2o
-from geo_mapper_api import MatchConfig, evaluation
+from geo_mapper_api import MatchConfig, evaluation, matching
+from geo_mapper_api.filters import EXCLUDED_HIGHWAY
 
 DATA = Path(os.environ.get("GEO_MAPPER_TEST_DATA", ""))
 AREAS = {"downtown": "DAVIDSON", "crockett": "CROCKETT"}
@@ -59,13 +60,24 @@ def run(request):
             mp.setattr(ox.settings, "cache_folder", str(DATA / "osm_cache"))
             result = i2o.serial(geojson, csv, AREAS[area], config=CONFIG)  # serial: logs stay in this process
             xds = gma.load_and_prepare_inrix_data_for_multiple_counties(geojson, [AREAS[area]])
-            summary = evaluation.summary(result, xds, evaluation.area_edges(xds, CONFIG), CONFIG)
+            edges = evaluation.area_edges(xds, CONFIG)  # inside the patch, so it reads the test cache
+            summary = evaluation.summary(result, xds, edges, CONFIG)
     finally:
         matching_logger.removeHandler(collect)
         matching_logger.setLevel(old_level)
     summary["P/N disagreements"] = sum(getattr(r, "pn_disagreements", 0) for r in collect.records)
     logger.info("%s summary: %s", area, summary)
-    return {"area": area, "result": result, "xds": xds, "csv": csv, "summary": summary}
+    return {"area": area, "result": result, "xds": xds, "csv": csv, "summary": summary, "edges": edges}
+
+
+def test_graph_has_only_road_types(run):
+    # The anchored filter removes exact values, so a raw multi-value such as "footway;steps" passes by design.
+    excluded = set(EXCLUDED_HIGHWAY)
+    for value in run["edges"]["highway"]:
+        ways = value if isinstance(value, list) else [value]
+        assert ways and all(isinstance(w, str) and w not in excluded for w in ways), value
+    if run["area"] == "downtown":
+        assert any("service" in matching.road_types(v) for v in run["edges"]["highway"])
 
 
 def test_coverage(run):

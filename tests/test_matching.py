@@ -163,6 +163,40 @@ def test_road_level_rule(matching, road_name, frc, highway, allowed):
     assert matching.road_level_allows(road_name, frc, highway) is allowed
 
 
+@pytest.mark.parametrize("highway, allowed", [
+    ("service", False),
+    (["service", "residential"], True),
+    ("residential;service", True),
+    ("busway", False),
+    ("rest_area", False),
+    ("escape", False),
+    (["busway", "service"], False),
+    ("residential", True),
+    ("motorway_link", True),
+    ("road", True),
+    ("living_street", True),
+    (float("nan"), False),
+])
+def test_fallback_type_rule(matching, highway, allowed):
+    assert matching.fallback_type_allows(highway) is allowed
+
+
+@pytest.mark.parametrize("highway, label", [
+    ("primary", "primary"),
+    (["service", "residential"], "residential;service"),
+    (["primary", "primary"], "primary"),
+    ("service;residential", "residential;service"),
+])
+def test_highway_label(matching, highway, label):
+    assert matching.highway_label(highway) == label
+
+
+@pytest.mark.parametrize("highway", [float("nan"), None, "", []])
+def test_highway_label_refuses_an_edge_without_a_road_type(matching, highway):
+    with pytest.raises(ValueError, match="no OSM highway tag"):
+        matching.highway_label(highway)
+
+
 @pytest.mark.parametrize("oneway, reversed_, two_way", [
     (False, False, True),
     (np.bool_(False), np.bool_(True), True),
@@ -214,6 +248,13 @@ def test_fallback_refuses_an_interstate_xd_on_a_residential_edge(matching, confi
     rows, rejected = matching.geometry_fallback(edges, xds, set(), config)
     assert rows.empty
     assert rejected == {"road_level": 1}
+
+
+def test_fallback_refuses_a_service_edge(matching, config):
+    edges, xds = fallback_inputs("DELTA ROAD", 4, LineString([(10, 1), (90, 1)]), "service")
+    rows, rejected = matching.geometry_fallback(edges, xds, set(), config)
+    assert rows.empty
+    assert rejected == {"road_type": 1}
 
 
 def test_fallback_accepts_a_ramp_xd_on_a_motorway_link(matching, config):

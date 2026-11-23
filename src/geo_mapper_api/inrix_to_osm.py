@@ -12,7 +12,7 @@ from geo_mapper_api.config import MatchConfig
 
 logger = logging.getLogger(__name__)
 
-RESULT_COLUMNS = ["u", "v", "key", "osmid", "XDSegID", "osm_geom", "inrix_geom",
+RESULT_COLUMNS = ["u", "v", "key", "osmid", "highway", "XDSegID", "osm_geom", "inrix_geom",
                   "overlap_m", "source", "county"]
 
 
@@ -90,6 +90,8 @@ def serial(geojson_path, csv_path, counties, config=None):
         A DataFrame with RESULT_COLUMNS, one row per (u, v, key, XDSegID). Geometries are in
         EPSG:4326. overlap_m is how far the edge runs along the XD, in meters. source is
         "conflation" for matches through INRIX's way IDs and "geometry" for the fallback.
+        highway is the edge's OSM road types, sorted and joined with ";". osmid is one of the
+        edge's ways, so join on u, v and key.
 
     Raises:
         TypeError: config is not a MatchConfig.

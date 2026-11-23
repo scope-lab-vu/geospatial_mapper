@@ -10,6 +10,8 @@ zone). An edge belongs to an XD when it runs along the XD, in the XD's direction
   INRIX's P/N flag is compared with it on two-way edges and disagreements are logged.
 - XDs left mostly uncovered (out-of-date way IDs) are searched again by geometry alone, with a
   road-level rule so an XD can't match a road on another level.
+- The fallback only matches general-traffic road types. Service roads, busways and the like are
+  matched only through INRIX's way IDs.
 """
 import logging
 import re
@@ -26,6 +28,12 @@ logger = logging.getLogger(__name__)
 INTERSTATE_NAME = re.compile(r"^I-\d")
 MOTORWAY = "motorway"
 INTERSTATE_EDGES = {"motorway", "motorway_link"}
+# Road types the geometric fallback may match. residential_link is non-standard but occurs in OSM.
+FALLBACK_HIGHWAY = frozenset({
+    "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
+    "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified",
+    "residential", "residential_link", "living_street", "road",
+})
 
 # Geometry constants (not settings): how a seam crossing is told apart from an ordinary segment,
 # the step used to read a line's local direction, and the rounding tolerance of the keep test.
@@ -35,9 +43,11 @@ TANGENT_STEP_M = 1.0
 TOLERANCE_M = 1e-6
 
 PAIR = ["u", "v", "key", "XDSegID"]
-MATCH_COLUMNS = ["u", "v", "key", "osmid", "XDSegID", "osm_geom", "inrix_geom", "overlap_m", "source"]
-MATCH_TYPES = {"u": "int64", "v": "int64", "key": "int64", "osmid": "int64", "XDSegID": "int64", "overlap_m": "float64"}
-_ROW_COLUMNS = ["u", "v", "key", "osmid", "XDSegID", "overlap_m", "intervals"]
+MATCH_COLUMNS = ["u", "v", "key", "osmid", "highway", "XDSegID", "osm_geom", "inrix_geom", "overlap_m", "source"]
+# highway is pinned to object so pandas 3 doesn't infer its own str dtype and empty and full results agree.
+MATCH_TYPES = {"u": "int64", "v": "int64", "key": "int64", "osmid": "int64", "highway": "object",
+               "XDSegID": "int64", "overlap_m": "float64"}
+_ROW_COLUMNS = ["u", "v", "key", "osmid", "highway", "XDSegID", "overlap_m", "intervals"]
 
 
 def band(xd_line, half_width_m):
@@ -113,8 +123,29 @@ def required_overlap_m(xd_length_m, min_overlap_m):
     return min(min_overlap_m, xd_length_m / 2)
 
 
-def _tags(highway):
-    return set(highway) if isinstance(highway, list) else {highway}
+def road_types(highway):
+    """The set of road types in an edge's highway value, which is a list, a ";"-joined string, or missing."""
+    if isinstance(highway, list):
+        return set(highway)
+    if isinstance(highway, str):
+        return {t for t in highway.split(";") if t}
+    return set()
+
+
+def fallback_type_allows(highway):
+    """Whether the geometric fallback may match an edge with these OSM highway tags."""
+    return bool(road_types(highway) & FALLBACK_HIGHWAY)
+
+
+def highway_label(highway):
+    """An edge's road types as sorted ";"-joined text, such as "residential;service".
+
+    The road filter requires a highway tag, so an edge without one means the graph came from elsewhere.
+    """
+    types = road_types(highway)
+    if not types:
+        raise ValueError(f"edge has no OSM highway tag (highway={highway!r})")
+    return ";".join(sorted(types))
 
 
 def is_interstate(road_name):
@@ -124,7 +155,7 @@ def is_interstate(road_name):
 
 def road_level_allows(road_name, frc, highway):
     """Whether a fallback match may put this XD on an edge with these OSM highway tags."""
-    tags = _tags(highway)
+    tags = road_types(highway)
     if is_interstate(road_name):
         return bool(tags & INTERSTATE_EDGES)
     if frc <= 2:
@@ -222,6 +253,8 @@ def geometry_fallback(edges_utm, xds_utm, seen_pairs, config):
             reasons.append("overlap")
         elif not runs_with:
             reasons.append("direction")
+        elif not fallback_type_allows(highway):
+            reasons.append("road_type")
         elif not road_level_allows(road_name, frc, highway):
             reasons.append("road_level")
         else:
@@ -230,6 +263,7 @@ def geometry_fallback(edges_utm, xds_utm, seen_pairs, config):
     kept = rows[[r is None for r in reasons]]
     out = pd.DataFrame({"u": kept["u"].to_numpy(), "v": kept["v"].to_numpy(), "key": kept["key"].to_numpy(),
                         "osmid": [_smallest_way(o) for o in kept["osmid"]],
+                        "highway": kept["highway"].to_numpy(),
                         "XDSegID": kept["XDSegID"].to_numpy(), "overlap_m": kept["along_m"].to_numpy(),
                         "intervals": kept["intervals"].to_list()})
     return _rows(out), rejected
@@ -266,7 +300,8 @@ def match_county(edges, conflation, xds, config):
     kept = measured[long_enough & measured["runs_with"]]
     conflation_rows = _rows(pd.DataFrame({
         "u": kept["u"].to_numpy(), "v": kept["v"].to_numpy(), "key": kept["key"].to_numpy(),
-        "osmid": kept["osmid"].to_numpy(), "XDSegID": kept["XDSegID"].to_numpy(),
+        "osmid": kept["osmid"].to_numpy(), "highway": kept["highway"].to_numpy(),
+        "XDSegID": kept["XDSegID"].to_numpy(),
         "overlap_m": kept["along_m"].to_numpy(), "intervals": kept["intervals"].to_list()}))
     logger.debug("%d way-ID rows kept by direction and the runs-along rule", len(conflation_rows))
 
@@ -286,6 +321,7 @@ def match_county(edges, conflation, xds, config):
     rows["source_rank"] = (rows["source"] != "conflation").astype(int)
     rows = (rows.sort_values(["source_rank", "osmid"], kind="stable")
                 .drop_duplicates(PAIR).drop(columns=["source_rank", "intervals"]))
+    rows["highway"] = [highway_label(h) for h in rows["highway"]]
 
     osm_geom = dict(zip(map(tuple, edges_4326[["u", "v", "key"]].itertuples(index=False)), edges_4326.geometry))
     xd_geom = dict(zip(xds["XDSegID"], xds.geometry))

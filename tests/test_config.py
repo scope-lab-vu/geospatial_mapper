@@ -15,7 +15,7 @@ def MatchConfig():
 def test_defaults(MatchConfig):
     config = MatchConfig()
     assert (config.band_half_width_m, config.min_overlap_m, config.fallback_below_coverage,
-            config.hull_buffer_m, config.reserved_cores) == (15.0, 10.0, 0.5, 200.0, 2)
+            config.hull_buffer_m, config.reserved_cores) == (15.0, 10.0, 0.9, 200.0, 2)
 
 
 def test_exported_from_the_package(MatchConfig):

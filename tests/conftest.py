@@ -21,6 +21,8 @@ NODES = {
     6: (-86.7760, 36.1600),  # F, end of the block after E2
     11: (-89.2000, 36.0000),  # P, Crockett road start
     12: (-89.2000, 36.0009),  # Q, Crockett road end
+    13: (-89.3000, 36.1000),  # L, Lake County service road start
+    14: (-89.3000, 36.1009),  # M, Lake County service road end
 }
 
 # (u, v, key, osmid, highway, reversed). Every road is two-way: the edge in the way's drawn order has
@@ -32,12 +34,14 @@ EDGES = [
     (3, 2, 0, [100, 101], "primary", True),
     (3, 5, 0, [100, 101], "primary", False),
     (5, 3, 0, [100, 101], "primary", True),
-    (5, 6, 0, 400, "primary", False),
-    (6, 5, 0, 400, "primary", True),
+    (5, 6, 0, 400, ["primary", "secondary"], False),  # a list, as osmnx gives for merged ways of two types
+    (6, 5, 0, 400, ["primary", "secondary"], True),
     (2, 4, 0, 200, "residential", False),
     (4, 2, 0, 200, "residential", True),
     (11, 12, 0, 300, "residential", False),
     (12, 11, 0, 300, "residential", True),
+    (13, 14, 0, 301, "service", False),
+    (14, 13, 0, 301, "service", True),
 ]
 
 
@@ -111,15 +115,22 @@ def xd_rows(xd9_name="I-99 N"):
         # An FRC 1 XD over the residential Side St, also with a stale way ID.
         {"County": "DAVIDSON", "XDSegID": 9, "FRC": 1, "RoadName": xd9_name, "Bearing": "N",
          "geometry": east(NODES[2], NODES[4])},
+        # On a Lake County service road, northbound, conflated to it (way 301).
+        {"County": "LAKE", "XDSegID": 10, "FRC": 4, "RoadName": "DELTA ROAD", "Bearing": "N",
+         "geometry": east(NODES[13], NODES[14])},
+        # Beside the same service road, southbound, with a stale way ID, so only the fallback could reach it.
+        {"County": "LAKE", "XDSegID": 11, "FRC": 4, "RoadName": "EPSILON ROAD", "Bearing": "S",
+         "geometry": east(NODES[14], NODES[13])},
     ]
 
 
-CONFLATION = [(5, "100;101", "P;P"), (6, "300", "P"), (8, "999", "P"), (9, "999", "P")]
+CONFLATION = [(5, "100;101", "P;P"), (6, "300", "P"), (8, "999", "P"), (9, "999", "P"),
+              (10, "301", "P"), (11, "999", "P")]
 
 
 @pytest.fixture
 def tiny_inputs(tmp_path):
-    """A hand-made Nashville road network with Davidson XDs 5, 8 and 9 and Crockett XD 6."""
+    """A hand-made road network with Davidson XDs 5, 8 and 9, Crockett XD 6 and Lake XDs 10 and 11."""
     geojson = write_geojson(tmp_path / "xd.geojson", xd_rows())
     csv = write_conflation(tmp_path / "conflation.csv", CONFLATION)
     return SimpleNamespace(geojson=geojson, csv=csv, graph=_tiny_graph())

@@ -46,6 +46,36 @@ def test_stale_way_id_is_recovered_by_geometry(patched_graph):
     assert set(xd8.osmid) == {400}
 
 
+def test_result_carries_the_edge_road_type(patched_graph):
+    out = i2o.serial(patched_graph.geojson, patched_graph.csv, "DAVIDSON")
+
+    xd8 = out[out.XDSegID == 8]
+    assert list(xd8.highway) == ["primary;secondary"]  # edge 5-6 merges a primary and a secondary way
+    assert set(out[out.XDSegID == 5].highway) == {"primary"}
+
+
+def test_service_road_row_carries_service(patched_graph):
+    # The graph is patched, so this covers the conflation path and the column. The download filter is
+    # covered by test_filters.py and the integration test.
+    out = i2o.serial(patched_graph.geojson, patched_graph.csv, "LAKE")
+
+    xd10 = out[out.XDSegID == 10]
+    assert _edges(xd10) == [(13, 14, 0)]
+    assert list(xd10.source) == ["conflation"]
+    assert list(xd10.highway) == ["service"]
+
+
+def test_fallback_does_not_put_an_xd_on_a_service_road(patched_graph, caplog):
+    with caplog.at_level(logging.INFO, logger="geo_mapper_api.matching"):
+        out = i2o.serial(patched_graph.geojson, patched_graph.csv, "LAKE")
+
+    assert _edges(out, 11) == []
+    summaries = [r for r in caplog.records if hasattr(r, "fallback_rejections")]
+    assert len(summaries) == 1
+    # Edge 13-14 points north, against XD 11. Its twin 14-13 runs with XD 11 but is a service road.
+    assert summaries[0].fallback_rejections == {"direction": 1, "road_type": 1}
+
+
 def test_interstate_xd_is_refused_on_a_residential_street(patched_graph):
     out = i2o.serial(patched_graph.geojson, patched_graph.csv, "DAVIDSON")
     assert _edges(out, 9) == []
@@ -104,6 +134,7 @@ def test_no_matches_returns_empty_result_columns(patched_graph, threads, tmp_pat
             out = run(geojson, patched_graph.csv, "DAVIDSON")
         assert out.empty
         assert list(out.columns) == i2o.RESULT_COLUMNS
+        assert out["highway"].dtype == object
     assert any("no edges" in r.getMessage() for r in caplog.records)
 
 
@@ -167,3 +198,5 @@ def test_output_column_types(patched_graph, county):
     for column in ["u", "v", "key", "osmid", "XDSegID"]:
         assert out[column].dtype == "int64", (column, out[column].dtype)
     assert out["overlap_m"].dtype == "float64"
+    assert out["highway"].dtype == object
+    assert all(isinstance(value, str) for value in out["highway"])
