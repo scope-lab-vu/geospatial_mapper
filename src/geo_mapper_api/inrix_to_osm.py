@@ -91,7 +91,7 @@ def serial(geojson_path, csv_path, counties, config=None):
         EPSG:4326. overlap_m is how far the edge runs along the XD, in meters. source is
         "conflation" for matches through INRIX's way IDs and "geometry" for the fallback.
         highway is the edge's OSM road types, sorted and joined with ";". osmid is one of the
-        edge's ways, so join on u, v and key, not osmid.
+        edge's ways, so join on u, v and key.
 
     Raises:
         TypeError: config is not a MatchConfig.

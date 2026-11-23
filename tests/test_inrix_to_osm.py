@@ -55,7 +55,8 @@ def test_result_carries_the_edge_road_type(patched_graph):
 
 
 def test_service_road_row_carries_service(patched_graph):
-    # The graph is patched, so this covers the conflation path and the column, not the download filter.
+    # The graph is patched, so this covers the conflation path and the column. The download filter is
+    # covered by test_filters.py and the integration test.
     out = i2o.serial(patched_graph.geojson, patched_graph.csv, "LAKE")
 
     xd10 = out[out.XDSegID == 10]
@@ -71,7 +72,7 @@ def test_fallback_does_not_put_an_xd_on_a_service_road(patched_graph, caplog):
     assert _edges(out, 11) == []
     summaries = [r for r in caplog.records if hasattr(r, "fallback_rejections")]
     assert len(summaries) == 1
-    # Edge 13-14 points north, against XD 11; its twin 14-13 runs with XD 11 but is a service road.
+    # Edge 13-14 points north, against XD 11. Its twin 14-13 runs with XD 11 but is a service road.
     assert summaries[0].fallback_rejections == {"direction": 1, "road_type": 1}
 
 

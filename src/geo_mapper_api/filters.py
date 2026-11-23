@@ -7,7 +7,7 @@ Overpass's `!~` also matches ways without the key, so `["highway"]` must be requ
 The exclusion pattern is anchored, so it removes only the exact values listed.
 """
 EXCLUDED_HIGHWAY = (
-    # For people, not vehicles.
+    # Ways for people on foot, bike or horse.
     "footway", "cycleway", "path", "steps", "pedestrian", "bridleway", "corridor", "elevator",
     "escalator", "ladder",
     # Not open roads.

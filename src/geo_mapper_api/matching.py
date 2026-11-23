@@ -10,7 +10,7 @@ zone). An edge belongs to an XD when it runs along the XD, in the XD's direction
   INRIX's P/N flag is compared with it on two-way edges and disagreements are logged.
 - XDs left mostly uncovered (out-of-date way IDs) are searched again by geometry alone, with a
   road-level rule so an XD can't match a road on another level.
-- The fallback only matches general-traffic road types; service roads, busways and the like are
+- The fallback only matches general-traffic road types. Service roads, busways and the like are
   matched only through INRIX's way IDs.
 """
 import logging
@@ -123,8 +123,8 @@ def required_overlap_m(xd_length_m, min_overlap_m):
     return min(min_overlap_m, xd_length_m / 2)
 
 
-def _tags(highway):
-    """The road types of an edge's highway value: a list, a ";"-joined string, or missing (no types)."""
+def road_types(highway):
+    """The set of road types in an edge's highway value, which is a list, a ";"-joined string, or missing."""
     if isinstance(highway, list):
         return set(highway)
     if isinstance(highway, str):
@@ -134,12 +134,18 @@ def _tags(highway):
 
 def fallback_type_allows(highway):
     """Whether the geometric fallback may match an edge with these OSM highway tags."""
-    return bool(_tags(highway) & FALLBACK_HIGHWAY)
+    return bool(road_types(highway) & FALLBACK_HIGHWAY)
 
 
 def highway_label(highway):
-    """An edge's road types as sorted ";"-joined text, such as "residential;service"."""
-    return ";".join(sorted(_tags(highway)))
+    """An edge's road types as sorted ";"-joined text, such as "residential;service".
+
+    The road filter requires a highway tag, so an edge without one means the graph came from elsewhere.
+    """
+    types = road_types(highway)
+    if not types:
+        raise ValueError(f"edge has no OSM highway tag (highway={highway!r})")
+    return ";".join(sorted(types))
 
 
 def is_interstate(road_name):
@@ -149,7 +155,7 @@ def is_interstate(road_name):
 
 def road_level_allows(road_name, frc, highway):
     """Whether a fallback match may put this XD on an edge with these OSM highway tags."""
-    tags = _tags(highway)
+    tags = road_types(highway)
     if is_interstate(road_name):
         return bool(tags & INTERSTATE_EDGES)
     if frc <= 2:

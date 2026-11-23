@@ -7,7 +7,7 @@ package versions with different dependencies can be compared side by side:
     python scripts/compare_versions.py --base v0.3.0 --base-python .venv/bin/python --areas davidson
 
 The base must be 0.3.0 or later. Each version's wrong-level check uses its own OSM graph,
-built with its own road filter; which XDs have a road nearby is judged on the working tree's
+built with its own road filter. Which XDs have a road nearby is judged on the working tree's
 road graph for both. Pairs are compared as (osmid, XDSegID), because the two graphs can split
 roads into different edges. The same road can still show a different osmid when the graphs
 merge ways differently, so a few pair differences are not real match changes.
@@ -41,7 +41,7 @@ REPO = Path(__file__).resolve().parent.parent
 GEOMETRY_COLUMNS = ("osm_geom", "inrix_geom")
 PAIR = ["u", "v", "key", "XDSegID"]
 RUNS = 2  # the second run is timed, the first may download OSM data
-REQUESTS_TIMEOUT = 900  # seconds; a whole-county Overpass response needs more than osmnx's 180
+REQUESTS_TIMEOUT = 900  # seconds, since a whole-county Overpass response needs more than osmnx's 180
 
 logger = logging.getLogger("compare_versions")
 
@@ -104,8 +104,8 @@ def _cache_bytes(folder):
 def run_version(label, python, src, area, data, out_dir):
     """Run one version RUNS times on an area.
 
-    Returns a dict: frame, seconds, pn and rejections from the last (cached) run, and
-    first_seconds and download_mb (OSM data the first run added to the cache).
+    The returned dict holds frame, seconds, pn (P/N disagreements) and rejections from the last
+    (cached) run, and first_seconds and download_mb (OSM data the first run added to the cache).
     """
     import pandas as pd
 
@@ -137,12 +137,11 @@ def run_version(label, python, src, area, data, out_dir):
     return dict(results[-1], first_seconds=results[0]["seconds"], download_mb=results[0]["added_mb"])
 
 
-def _service_only(frame, edges):
-    """For each result row, whether its edge in `edges` is a service road and nothing else."""
+def _service_only_edges(edges):
+    """The (u, v, key) of every edge whose road types are service and nothing else."""
     from geo_mapper_api import matching
 
-    service = {k: matching._tags(h) == {"service"} for k, h in edges["highway"].items()}
-    return [service.get(k, False) for k in zip(frame["u"], frame["v"], frame["key"])]
+    return {k for k, h in edges["highway"].items() if matching.road_types(h) == {"service"}}
 
 
 def _ways(osmids):
@@ -158,7 +157,7 @@ def table(area, data, base_label, base, head, base_src):
     import shapely
 
     import geo_mapper_api.converters as gma
-    from geo_mapper_api import MatchConfig, evaluation, filters, matching
+    from geo_mapper_api import MatchConfig, evaluation, filters
 
     ox.settings.use_cache = True
     ox.settings.cache_folder = str(data / "osm_cache")
@@ -179,12 +178,12 @@ def table(area, data, base_label, base, head, base_src):
         for column in GEOMETRY_COLUMNS:
             frame[column] = shapely.from_wkb(frame[column].map(bytes.fromhex))
         measures = evaluation.summary(frame, xds, head_edges, config, highway=edges["highway"])
-        service = frame.assign(service=_service_only(frame, edges))
+        service_edges = _service_only_edges(edges)
+        service = frame.assign(service=[k in service_edges for k in zip(frame["u"], frame["v"], frame["key"])])
         only_service = service.groupby("XDSegID")["service"].all()
-        service_edges = sum(matching._tags(h) == {"service"} for h in edges["highway"])
         measures.update({
             "OSM edges in the area graph": len(edges),
-            "service-only edges in the graph": f"{service_edges} ({service_edges / len(edges):.0%})",
+            "service-only edges in the graph": f"{len(service_edges)} ({len(service_edges) / len(edges):.0%})",
             "rows on service-only edges": int(service["service"].sum()),
             "XDs matched only through service-only edges": int(only_service.sum()),
             "conflation way IDs present in the graph":

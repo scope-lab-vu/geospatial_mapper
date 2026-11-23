@@ -156,11 +156,11 @@ The result has one row per OSM edge and XD segment pair:
 - `osmid` is the OSM way that links the edge to the XD (the smallest, when several do). For `source == "geometry"` rows it is the smallest way ID on the edge.
 - An osmnx edge can carry several OSM ways and `osmid` shows only one of them, so `osmid` is no join key. Join results to an osmnx graph or to other per-edge data on `u`, `v` and `key`.
 - `highway` is the edge's OSM road type, such as `primary` or `service`. When osmnx merged ways of different types into one edge, it lists them sorted and joined with `;`, such as `residential;service`. It covers the whole edge, so it can name more types than the way in `osmid`, and it is never missing.
-- To drop rows on edges that are only service roads, use `df[df["highway"] != "service"]`. To keep only general-traffic roads, the types the fallback may match, use:
+- `df[df["highway"] != "service"]` drops rows on edges that are only service roads. To keep only the general-traffic roads the fallback may match, filter with the package's own rule.
   ```python
-  from geo_mapper_api.matching import FALLBACK_HIGHWAY
+  from geo_mapper_api.matching import fallback_type_allows
 
-  df = df[df["highway"].str.split(";").map(lambda types: bool(set(types) & FALLBACK_HIGHWAY))]
+  df = df[df["highway"].map(fallback_type_allows)]
   ```
 - Geometries are in EPSG:4326 (longitude, latitude).
 - `overlap_m` is how far the edge runs along the XD, in meters.

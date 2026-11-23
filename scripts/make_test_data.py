@@ -2,7 +2,8 @@
 
 Writes three areas: downtown Nashville (Davidson XDs inside a box around the interstate loop),
 all of Crockett County, and all of Davidson County. The integration tests use downtown and
-Crockett; davidson is only for scripts/compare_versions.py --areas davidson. The source files are licensed and must never be committed.
+Crockett. davidson is only for scripts/compare_versions.py --areas davidson.
+The source files are licensed and must never be committed.
 Pass their scp locations the first time; later runs reuse the copies in <out>/raw/.
 The output folder (tests/data by default) is gitignored.
 

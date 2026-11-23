@@ -191,6 +191,12 @@ def test_highway_label(matching, highway, label):
     assert matching.highway_label(highway) == label
 
 
+@pytest.mark.parametrize("highway", [float("nan"), None, "", []])
+def test_highway_label_refuses_an_edge_without_a_road_type(matching, highway):
+    with pytest.raises(ValueError, match="no OSM highway tag"):
+        matching.highway_label(highway)
+
+
 @pytest.mark.parametrize("oneway, reversed_, two_way", [
     (False, False, True),
     (np.bool_(False), np.bool_(True), True),

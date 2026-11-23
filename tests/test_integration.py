@@ -77,7 +77,7 @@ def test_graph_has_only_road_types(run):
         ways = value if isinstance(value, list) else [value]
         assert ways and all(isinstance(w, str) and w not in excluded for w in ways), value
     if run["area"] == "downtown":
-        assert any("service" in matching._tags(v) for v in run["edges"]["highway"])
+        assert any("service" in matching.road_types(v) for v in run["edges"]["highway"])
 
 
 def test_coverage(run):
