@@ -21,7 +21,7 @@ class MatchConfig:
 
     band_half_width_m: float = 15.0
     min_overlap_m: float = 10.0
-    fallback_below_coverage: float = 0.5
+    fallback_below_coverage: float = 0.9
     hull_buffer_m: float = 200.0
     reserved_cores: int = 2
 

@@ -16,7 +16,7 @@ Match INRIX XD segments to OpenStreetMap (OSM) road edges in four steps.
    df.to_csv("davidson_inrix_osm.csv", index=False)
    ```
    The first run downloads the county's road network from OSM, which can take a few minutes.
-4. **Read the result**: one row per XD and OSM edge it runs along. `XDSegID` is the INRIX segment; `u`, `v` and `key` identify the OSM edge; `osmid` is the OSM way. See [Usage](#usage) below for every column.
+4. **Read the result**: one row per XD and OSM edge it runs along. `XDSegID` is the INRIX segment; `u`, `v` and `key` identify the OSM edge; `osmid` is one of its OSM ways and `highway` its road type. See [Usage](#usage) below for every column.
 
 The sections below describe the input fields, the settings and how a match is decided.
 
@@ -102,12 +102,14 @@ if __name__ == "__main__":
 `parallel` runs each county in its own process, using every CPU core but `reserved_cores` (2 by default). It must be called under `if __name__ == "__main__":`, because the worker processes import your script again. `serial` takes the same arguments, runs one county at a time, and needs no guard. `config` is optional; leaving it out uses the defaults below.
 
 ## How a match is decided
+The road network comes from OSM. It holds every way with a `highway` tag that is not drawn as an area, including service roads (driveways, parking aisles, alleys) and private roads. It leaves out footways, cycleways, paths, steps, pedestrian streets, bridleways, corridors, elevators, escalators, ladders, tracks, raceways, platforms, bus stops, trailheads, and roads that are under construction, proposed, planned, abandoned or razed.
+
 For each XD, an OSM edge is matched when:
 1. it carries an OSM way that INRIX's conflation lists for the XD;
 2. it points the XD's direction of travel where they meet (INRIX's P/N flag is compared with this on two-way streets, and disagreements are logged as warnings);
 3. it runs along the XD: inside a band `band_half_width_m` either side of the XD, cut square at the XD's ends, the edge reaches at least `min_overlap_m` along the XD (half the XD's length for XDs shorter than twice that). Cross streets and the next block past the XD's end reach almost nowhere along it, so they are not matched.
 
-An XD whose matches cover less than `fallback_below_coverage` of its length (usually because INRIX's way IDs are out of date) is searched again by geometry alone. Fallback matches must also pass a road-level rule: an interstate XD (`RoadName` starting `I-` and a digit) only matches `motorway` or `motorway_link` edges, and a non-interstate XD of road class 3 to 5 never matches a `motorway` edge. An XD with no `RoadName` is judged by its road class, so an unnamed interstate XD can lose motorway matches but never gains wrong ones.
+An XD whose matches cover less than `fallback_below_coverage` of its length (usually because INRIX's way IDs are out of date) is searched again by geometry alone. Fallback matches are limited to general-traffic roads, which are `motorway`, `trunk`, `primary`, `secondary` and `tertiary` with their `_link` ramps, `unclassified`, `residential`, `living_street` and `road`. Service roads, busways and rest areas are matched only through INRIX's way IDs. Fallback matches must also pass a road-level rule: an interstate XD (`RoadName` starting `I-` and a digit) only matches `motorway` or `motorway_link` edges, and a non-interstate XD of road class 3 to 5 never matches a `motorway` edge. An XD with no `RoadName` is judged by its road class, so an unnamed interstate XD can lose motorway matches but never gains wrong ones.
 
 ## Settings
 Every tunable number lives in `MatchConfig`. Distances are in meters.
@@ -116,7 +118,7 @@ Every tunable number lives in `MatchConfig`. Distances are in meters.
 |---|---|---|
 | `band_half_width_m` | 15.0 | half-width of the band around each XD |
 | `min_overlap_m` | 10.0 | how far an edge must run along its XD inside the band |
-| `fallback_below_coverage` | 0.5 | XDs covered less than this share are searched by geometry; 0 turns the fallback off |
+| `fallback_below_coverage` | 0.9 | XDs covered less than this share are searched by geometry; 0 turns the fallback off |
 | `hull_buffer_m` | 200.0 | margin around the county's XDs for the OSM download |
 | `reserved_cores` | 2 | CPU cores `parallel` leaves free |
 
@@ -131,7 +133,7 @@ config = MatchConfig.from_toml("matching.toml")
 A wrong type raises `TypeError` and an invalid value raises `ValueError`, both naming the setting (and the file, for `from_toml`).
 
 ## Known limits
-- An XD drawn more than `band_half_width_m` from every OSM road (the road was realigned, or OSM tags it as a track or service road the road filter leaves out) stays unmatched or partly covered.
+- An XD drawn more than `band_half_width_m` from every OSM road stays unmatched or partly covered. This happens when the road was realigned, when OSM tags it as a track or a road under construction, which the road filter leaves out, or when it is a service road cut off from the rest of the network, which osmnx drops.
 - An edge leaving the XD at an acute angle, such as a diverging ramp, can stay inside the band for 10 m or more and be matched. This mainly affects fallback matches, since a diverging road is usually a different OSM way.
 - Limited-access parkways that OSM tags `motorway` but INRIX classes 3 to 5 cannot be recovered by the fallback; their way-ID matches are unaffected.
 
@@ -142,6 +144,7 @@ The result has one row per OSM edge and XD segment pair:
 | v                | int      | 202705554                                 |
 | key              | int      | 0                                         |
 | osmid            | int      | 19495638                                  |
+| highway          | str      | primary                                   |
 | XDSegID          | int      | 1524404117                                |
 | osm_geom         | geometry | LINESTRING (-86.7801 36.1602, ...)        |
 | inrix_geom       | geometry | LINESTRING (-86.7800 36.1603, ...)        |
@@ -151,6 +154,14 @@ The result has one row per OSM edge and XD segment pair:
 
 - `u`, `v` and `key` identify the edge in the osmnx graph.
 - `osmid` is the OSM way that links the edge to the XD (the smallest, when several do). For `source == "geometry"` rows it is the smallest way ID on the edge.
+- An osmnx edge can carry several OSM ways and `osmid` shows only one of them, so `osmid` is no join key. Join results to an osmnx graph or to other per-edge data on `u`, `v` and `key`.
+- `highway` is the edge's OSM road type, such as `primary` or `service`. When osmnx merged ways of different types into one edge, it lists them sorted and joined with `;`, such as `residential;service`. It covers the whole edge, so it can name more types than the way in `osmid`, and it is never missing.
+- To drop rows on edges that are only service roads, use `df[df["highway"] != "service"]`. To keep only general-traffic roads, the types the fallback may match, use:
+  ```python
+  from geo_mapper_api.matching import FALLBACK_HIGHWAY
+
+  df = df[df["highway"].str.split(";").map(lambda types: bool(set(types) & FALLBACK_HIGHWAY))]
+  ```
 - Geometries are in EPSG:4326 (longitude, latitude).
 - `overlap_m` is how far the edge runs along the XD, in meters.
 - `source` is `conflation` for matches through INRIX's way IDs and `geometry` for fallback matches.
@@ -186,7 +197,10 @@ GEO_MAPPER_TEST_DATA=tests/data .venv/bin/pytest
 ```
 The first run downloads the OSM network into `tests/data/osm_cache`. Later runs reuse it.
 
-To compare this version's output with an earlier commit on the same data, run `scripts/compare_versions.py --base <commit> --base-python <a Python with that commit's dependencies>`. It prints a table per area and saves it under `log/`.
+To compare this version's output with an earlier commit on the same data, run `scripts/compare_versions.py --base <commit> --base-python <a Python with that commit's dependencies>`. The base must be 0.3.0 or later. It prints a table per area and saves it under `log/`. Its download size and first-run time are only meaningful with an empty `osm_cache`, so give it a data folder of its own. `make_test_data.py` also writes all of Davidson County, which `--areas davidson` compares:
+```
+.venv/bin/python scripts/compare_versions.py --base v0.3.0 --base-python .venv/bin/python --data <folder with davidson.geojson and davidson.csv> --areas davidson
+```
 
 # Releasing
 Set the new `version` in `pyproject.toml`, merge it to `main`, then push a matching tag such as `git tag v0.2.0 && git push origin v0.2.0`. The publish workflow checks that the tag matches the version and uploads to PyPI.

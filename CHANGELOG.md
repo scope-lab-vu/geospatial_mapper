@@ -2,6 +2,21 @@
 
 All notable changes to geo-mapper-api are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-23
+
+### Fixed
+- **The road filter downloaded every OSM way in the county**, including buildings, land use, rivers, power lines and railways, because Overpass's `!~` also matches ways without the tag. The geometric fallback then matched XDs to some of them, such as power lines. The filter now requires a `highway` tag, skips roads drawn as areas, and removes only the exact road types it lists.
+- **XDs that INRIX puts on service roads can now be matched.** Service roads (including driveways, parking aisles and alleys), busways, bus guideways, rest areas, service plazas, escape ramps and emergency bays are now downloaded and matched through INRIX's way IDs. osmnx still drops service roads cut off from the rest of the network. Tracks, roads under construction and paths for people stay excluded.
+
+### Changed
+- **The geometric fallback matches only general-traffic roads**, which are `motorway`, `trunk`, `primary`, `secondary` and `tertiary` with their `_link` ramps, `unclassified`, `residential`, `living_street` and `road`. Refusals of other road types are logged with the reason `road_type`.
+- **`fallback_below_coverage` defaults to 0.9** instead of 0.5. With service roads in the network, driveways split roads into more edges, and pieces of a road that OSM renumbered since INRIX's conflation no longer ride along on a longer edge. Searching every XD below 90% coverage fills those gaps. On downtown Nashville, XDs at least 90% covered went from 1,450 in 0.3.0 to 1,511 of 1,603, with no wrong-level matches.
+
+### Added
+- **A `highway` column** with each matched edge's OSM road type, joined with `;` when an edge merges several types. The README shows how to drop service roads or keep only general-traffic roads.
+- **The README says to join results on `u`, `v` and `key`**, because an edge can carry several OSM ways and `osmid` shows only one.
+- **`scripts/compare_versions.py`** compares all of Davidson County with `--areas davidson` and reports download size, first-run time, graph size and service-road use. Each version's wrong-level check uses its own graph, and pairs are compared by OSM way and XD.
+
 ## [0.3.0] - 2026-11-20
 
 0.2.0 was never published to PyPI, so this release also carries its changes. Upgrading from 0.1.2 changes the inputs, the settings and the output, as listed below.
@@ -76,5 +91,6 @@ On Crockett County (394 XDs), unmatched XDs fell from 84 to 7.
 
 Last release before this changelog.
 
+[0.3.1]: https://github.com/scope-lab-vu/geospatial_mapper/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/scope-lab-vu/geospatial_mapper/compare/f9bf28a...v0.3.0
 [0.1.2]: https://pypi.org/project/geo-mapper-api/0.1.2/
