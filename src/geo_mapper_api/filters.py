@@ -17,3 +17,11 @@ EXCLUDED_HIGHWAY = (
 )
 
 base_filter = '["highway"]["area"!~"yes"]["highway"!~"^(' + "|".join(EXCLUDED_HIGHWAY) + ')$"]'
+
+
+def keeps_way(tags):
+    """Whether base_filter keeps a way with these tags. For ways read from a file instead of downloaded."""
+    highway = tags.get("highway")
+    if not isinstance(highway, str) or highway in EXCLUDED_HIGHWAY:
+        return False
+    return "yes" not in str(tags.get("area", ""))

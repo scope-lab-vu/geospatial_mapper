@@ -1,8 +1,11 @@
 import pandas as pd
 import geopandas as gpd
+import networkx as nx
 import numpy as np
 import osmnx as ox
 import logging
+
+from geo_mapper_api import filters
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +85,25 @@ def get_osm_graph(polygon, custom_filter):
     """
     G = ox.graph_from_polygon(polygon, custom_filter=custom_filter, network_type='drive')
     return G
+
+def get_osm_graph_from_xml(osm_xml, polygon):
+    """Build the road graph for the polygon from an OSM XML file instead of a download.
+
+    Keeps the ways filters.base_filter keeps, cuts them to the polygon, keeps the largest connected
+    part and simplifies it, as osmnx does for a download.
+
+    Raises:
+        ValueError: the file has no road inside the polygon.
+    """
+    G = ox.graph_from_xml(osm_xml, bidirectional=False, simplify=False, retain_all=True)
+    G.remove_edges_from([(u, v, key) for u, v, key, tags in G.edges(keys=True, data=True) if not filters.keeps_way(tags)])
+    G.remove_nodes_from(list(nx.isolates(G)))
+    try:
+        G = ox.truncate.truncate_graph_polygon(G, polygon)
+    except ValueError as exc:  # osmnx: no graph nodes within the polygon
+        raise ValueError(f"{osm_xml}: no road inside the area of the XD segments ({exc})") from exc
+    return ox.simplify_graph(ox.truncate.largest_component(G))
+
 
 def load_conflation(csv_path, xd_ids):
     """Load INRIX conflation rows for the given XDs, one row per (XD, OSM way)."""

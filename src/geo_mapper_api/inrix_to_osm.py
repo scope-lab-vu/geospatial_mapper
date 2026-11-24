@@ -21,14 +21,20 @@ def _empty_result():
     return pd.DataFrame({c: pd.Series(dtype=types.get(c, "object")) for c in RESULT_COLUMNS})
 
 
-def process_county(conflation, inrix_df, county_name, config):
-    """Map one county's XD segments to the OSM edges that run along them."""
+def process_county(conflation, inrix_df, county_name, config, osm_xml=None):
+    """Map one county's XD segments to the OSM edges that run along them.
+
+    The roads are downloaded from OpenStreetMap, or read from the OSM XML file osm_xml when it is given.
+    """
     county_df = inrix_df[inrix_df["County"] == county_name].copy()
     county_conflation = conflation[conflation["XDSegID"].isin(county_df["XDSegID"])]
     logger.debug("%s: %d XDs, %d conflation rows", county_name, len(county_df), len(county_conflation))
 
     polygon = gma.get_exterior_polygon(county_df, config.hull_buffer_m)
-    G = gma.get_osm_graph(polygon, filters.base_filter)
+    if osm_xml is None:
+        G = gma.get_osm_graph(polygon, filters.base_filter)
+    else:
+        G = gma.get_osm_graph_from_xml(osm_xml, polygon)
     edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
     logger.debug("%s: OSM graph has %d edges", county_name, len(edges))
 
@@ -40,9 +46,9 @@ def process_county(conflation, inrix_df, county_name, config):
     return result.assign(county=county_name)[RESULT_COLUMNS]
 
 
-def _run_county(conflation, inrix_df, county_name, config):
+def _run_county(conflation, inrix_df, county_name, config, osm_xml=None):
     try:
-        return process_county(conflation, inrix_df, county_name, config)
+        return process_county(conflation, inrix_df, county_name, config, osm_xml)
     except Exception as exc:
         raise RuntimeError(f"county {county_name!r} failed: {type(exc).__name__}: {exc}") from exc
 
@@ -55,8 +61,10 @@ def _check_config(config):
     return config
 
 
-def _load_inputs(geojson_path, csv_path, counties):
-    """Check and load both input files before any county work starts."""
+def _load_inputs(geojson_path, csv_path, counties, osm_xml=None):
+    """Check and load the input files before any county work starts."""
+    if osm_xml is not None and not os.path.isfile(osm_xml):
+        raise ValueError(f"{osm_xml}: no such OSM XML file")
     counties = gma.normalize_counties(counties)
     inrix_df = gma.load_and_prepare_inrix_data_for_multiple_counties(geojson_path, counties)
     conflation = gma.load_conflation(csv_path, inrix_df["XDSegID"])
@@ -76,7 +84,7 @@ def _combine(results):
     return combined.sort_values(["county", "XDSegID", "u", "v", "key"]).reset_index(drop=True)
 
 
-def serial(geojson_path, csv_path, counties, config=None):
+def serial(geojson_path, csv_path, counties, config=None, osm_xml=None):
     """Map INRIX XD segments to OSM edges, one county at a time.
 
     Args:
@@ -85,6 +93,9 @@ def serial(geojson_path, csv_path, counties, config=None):
         counties: a county name or a list of them, matched case-insensitively.
         config: a MatchConfig with the matching settings; None uses the defaults
             (band_half_width_m, min_overlap_m, fallback_below_coverage, hull_buffer_m, reserved_cores).
+        osm_xml: an OSM XML file to read the roads from, such as the one a routing engine was built
+            from; None downloads the roads from OpenStreetMap as they are today. u and v are the
+            file's OSM node ids, so matches made on a file line up with whatever else was built from it.
 
     Returns:
         A DataFrame with RESULT_COLUMNS, one row per (u, v, key, XDSegID). Geometries are in
@@ -99,15 +110,15 @@ def serial(geojson_path, csv_path, counties, config=None):
         RuntimeError: a county failed; the message names the county and the original error.
     """
     config = _check_config(config)
-    counties, inrix_df, conflation = _load_inputs(geojson_path, csv_path, counties)
+    counties, inrix_df, conflation = _load_inputs(geojson_path, csv_path, counties, osm_xml)
     results = []
     for county_name in counties:
         logger.info("processing county %s", county_name)
-        results.append(_run_county(conflation, inrix_df, county_name, config))
+        results.append(_run_county(conflation, inrix_df, county_name, config, osm_xml))
     return _combine(results)
 
 
-def parallel(geojson_path, csv_path, counties, config=None):
+def parallel(geojson_path, csv_path, counties, config=None, osm_xml=None):
     """Same as serial, with counties processed in separate processes.
 
     Uses every core but config.reserved_cores, and no more workers than counties. Call it under
@@ -115,11 +126,11 @@ def parallel(geojson_path, csv_path, counties, config=None):
     Arguments, result and errors are the same as serial.
     """
     config = _check_config(config)
-    counties, inrix_df, conflation = _load_inputs(geojson_path, csv_path, counties)
+    counties, inrix_df, conflation = _load_inputs(geojson_path, csv_path, counties, osm_xml)
     results = []
     workers = _worker_count(len(counties), config.reserved_cores)
     with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(_run_county, conflation, inrix_df, c, config) for c in counties]
+        futures = [executor.submit(_run_county, conflation, inrix_df, c, config, osm_xml) for c in counties]
         for future in concurrent.futures.as_completed(futures):
             try:
                 results.append(future.result())

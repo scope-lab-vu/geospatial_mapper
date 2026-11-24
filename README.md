@@ -101,6 +101,26 @@ if __name__ == "__main__":
 ```
 `parallel` runs each county in its own process, using every CPU core but `reserved_cores` (2 by default). It must be called under `if __name__ == "__main__":`, because the worker processes import your script again. `serial` takes the same arguments, runs one county at a time, and needs no guard. `config` is optional; leaving it out uses the defaults below.
 
+## Matching on a saved OSM file
+By default the roads are downloaded from OpenStreetMap as they are on the day of the run. To match on a file you already have, such as the one a routing engine (Valhalla, OSRM) was built from, pass it as `osm_xml`:
+```python
+df = inrix_to_osm.serial(geojson_path, csv_path, ["DAVIDSON"], osm_xml="./data/tennessee_roads.osm")
+```
+No download is made. `u` and `v` are then the file's OSM node ids, so the matches line up with whatever else was built from that file, and two runs on the same file give the same result. The file's ways go through the same road filter as a download, and are cut to the county's area.
+
+The file must be OSM XML, a file ending in `.osm`. Routing engines are built from `.osm.pbf` extracts, which have to be converted first with the [osmium](https://osmcode.org/osmium-tool/) command-line tool. Install it with one of:
+```
+sudo apt install osmium-tool                 # Debian, Ubuntu
+brew install osmium-tool                     # macOS
+conda install -c conda-forge osmium-tool     # any platform
+```
+Then cut the file to your area and keep its roads, written as XML:
+```
+osmium extract --bbox -87.051,35.975,-86.517,36.396 tennessee-latest.osm.pbf -o davidson.osm.pbf
+osmium tags-filter davidson.osm.pbf w/highway -o davidson_roads.osm
+```
+The box is `WEST,SOUTH,EAST,NORTH` and should cover the counties you match. The one above is Davidson County. Cutting to the area and to roads keeps the file small and quick to read: XML is many times larger than `.osm.pbf`, and Davidson County's roads alone are 144 MB. The output's ending picks its format, so `-o davidson_roads.osm` writes OSM XML.
+
 ## How a match is decided
 The road network comes from OSM. It holds every way with a `highway` tag that is not drawn as an area, including service roads (driveways, parking aisles, alleys) and private roads. It leaves out footways, cycleways, paths, steps, pedestrian streets, bridleways, corridors, elevators, escalators, ladders, tracks, raceways, platforms, bus stops, trailheads, and roads that are under construction, proposed, planned, abandoned or razed.
 
