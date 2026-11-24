@@ -106,7 +106,7 @@ By default the roads are downloaded from OpenStreetMap as they are on the day of
 ```python
 df = inrix_to_osm.serial(geojson_path, csv_path, ["DAVIDSON"], osm_xml="./data/tennessee_roads.osm")
 ```
-No download is made. `u` and `v` are then the file's OSM node ids, so the matches line up with whatever else was built from that file, and two runs on the same file give the same result. The file's ways go through the same road filter and the same steps as a download.
+No download is made. `u` and `v` are then the file's OSM node ids, so the matches line up with whatever else was built from that file, and two runs on the same file give the same result. The file's ways go through the same road filter as a download, and are cut to the county's area.
 
 The file must be OSM XML (`.osm`). A `.osm.pbf` extract has to be converted first, for example with `osmium cat tennessee-latest.osm.pbf -o tennessee.osm`. Cutting it to the area first (`osmium extract`) keeps the read fast.
 

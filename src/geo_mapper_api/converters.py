@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 INRIX_REQUIRED = ["County", "XDSegID", "FRC", "RoadName"]
 CONFLATION_REQUIRED = ["XDSegID", "OSMWayIDs", "OSMWayDirections"]
 FRC_VALUES = range(1, 6)
-DOWNLOAD_BUFFER_M = 500  # osmnx builds a downloaded graph this far past the polygon before cutting it
 
 
 def normalize_counties(counties):
@@ -90,9 +89,8 @@ def get_osm_graph(polygon, custom_filter):
 def get_osm_graph_from_xml(osm_xml, polygon):
     """Build the road graph for the polygon from an OSM XML file instead of a download.
 
-    Follows the steps osmnx takes for a download, so a file saved today gives the graph a download
-    gives today: the ways filters.base_filter keeps, cut to the polygon grown by DOWNLOAD_BUFFER_M,
-    simplified, cut to the polygon, and the largest connected part kept each time.
+    Keeps the ways filters.base_filter keeps, cuts them to the polygon, keeps the largest connected
+    part and simplifies it, as osmnx does for a download.
 
     Raises:
         ValueError: the file has no road inside the polygon.
@@ -100,15 +98,11 @@ def get_osm_graph_from_xml(osm_xml, polygon):
     G = ox.graph_from_xml(osm_xml, bidirectional=False, simplify=False, retain_all=True)
     G.remove_edges_from([(u, v, key) for u, v, key, tags in G.edges(keys=True, data=True) if not filters.keeps_way(tags)])
     G.remove_nodes_from(list(nx.isolates(G)))
-
-    polygon_utm, utm = ox.projection.project_geometry(polygon)
-    buffered, _ = ox.projection.project_geometry(polygon_utm.buffer(DOWNLOAD_BUFFER_M), crs=utm, to_latlong=True)
     try:
-        G = ox.truncate.largest_component(ox.truncate.truncate_graph_polygon(G, buffered))
-        G = ox.simplify_graph(G)
-        return ox.truncate.largest_component(ox.truncate.truncate_graph_polygon(G, polygon))
+        G = ox.truncate.truncate_graph_polygon(G, polygon)
     except ValueError as exc:  # osmnx: no graph nodes within the polygon
         raise ValueError(f"{osm_xml}: no road inside the area of the XD segments ({exc})") from exc
+    return ox.simplify_graph(ox.truncate.largest_component(G))
 
 
 def load_conflation(csv_path, xd_ids):
