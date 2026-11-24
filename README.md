@@ -101,6 +101,15 @@ if __name__ == "__main__":
 ```
 `parallel` runs each county in its own process, using every CPU core but `reserved_cores` (2 by default). It must be called under `if __name__ == "__main__":`, because the worker processes import your script again. `serial` takes the same arguments, runs one county at a time, and needs no guard. `config` is optional; leaving it out uses the defaults below.
 
+## Matching on a saved OSM file
+By default the roads are downloaded from OpenStreetMap as they are on the day of the run. To match on a file you already have, such as the one a routing engine (Valhalla, OSRM) was built from, pass it as `osm_xml`:
+```python
+df = inrix_to_osm.serial(geojson_path, csv_path, ["DAVIDSON"], osm_xml="./data/tennessee_roads.osm")
+```
+No download is made. `u` and `v` are then the file's OSM node ids, so the matches line up with whatever else was built from that file, and two runs on the same file give the same result. The file's ways go through the same road filter and the same steps as a download.
+
+The file must be OSM XML (`.osm`). A `.osm.pbf` extract has to be converted first, for example with `osmium cat tennessee-latest.osm.pbf -o tennessee.osm`. Cutting it to the area first (`osmium extract`) keeps the read fast.
+
 ## How a match is decided
 The road network comes from OSM. It holds every way with a `highway` tag that is not drawn as an area, including service roads (driveways, parking aisles, alleys) and private roads. It leaves out footways, cycleways, paths, steps, pedestrian streets, bridleways, corridors, elevators, escalators, ladders, tracks, raceways, platforms, bus stops, trailheads, and roads that are under construction, proposed, planned, abandoned or razed.
 
