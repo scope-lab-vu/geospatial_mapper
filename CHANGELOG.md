@@ -6,6 +6,7 @@ All notable changes to geo-mapper-api are listed here. The format follows [Keep 
 
 ### Added
 - **`osm_xml` on `serial` and `parallel`** reads the roads from an OSM XML file instead of downloading them, so matches can be made on the same roads a routing engine was built from and repeat exactly. The file's ways go through the same road filter as a download. Without `osm_xml` nothing changes.
+- **The README shows how to make that file** from a `.osm.pbf` extract with the osmium command-line tool, and how to install the tool.
 
 ## [0.3.1] - 2026-11-23
 
